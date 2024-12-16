@@ -20,8 +20,8 @@ destination, be it the World, View, or another agent.
 
 If the agent needs to receive a finite resource, it is not possible to generate
 consumption events which guarantee atomicity.  For instance, if a bank agent
-has $100 and a user agent emits a withdraw(from:bank, amount:100) event along with
-five other agents, then each agent will receive their $100 when they apply their
+has 100 dollars and a user agent emits a withdraw(from:bank, amount:100) event along with
+five other agents, then each agent will receive their 100 dollars when they apply their
 events, but the bank will be overdrawn.
 
 To accomodate this computation model, withdrawals, or other finite resource

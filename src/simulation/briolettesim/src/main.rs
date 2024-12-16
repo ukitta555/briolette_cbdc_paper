@@ -13,6 +13,9 @@
 // limitations under the License.
 
 //  Basic model describing the briolette digital currency system.
+
+pub mod graph_utils;
+
 use rand::prelude::*;
 use rand::{rngs::StdRng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -66,6 +69,7 @@ impl Simulator {
         let txn_epoch = max(source.data.epoch, target.data.epoch);
         // Gossip here to ensure we're in sync.
         if source.data.epoch != target.data.epoch {
+            println!("Source epoch: {}, target epoch: {}", source.data.epoch, target.data.epoch);
             queue.enqueue(
                 Address::AgentId(source.id),
                 Address::AgentId(target.id),
@@ -530,77 +534,6 @@ impl Default for SupportedDistributions {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct GridCell {
-    agents: Vec<usize>,
-    resources: Vec<usize>,
-}
-
-impl GridCell {
-    pub fn new() -> GridCell {
-        GridCell {
-            agents: Vec::new(),
-            resources: Vec::new(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct Grid<T> {
-    bounds: (usize, usize),
-    cells: Vec<T>,
-}
-
-impl Grid<GridCell> {
-    pub fn new(bounds: (usize, usize)) -> Grid<GridCell> {
-        Grid {
-            bounds: bounds,
-            cells: vec![GridCell::new(); bounds.0 * bounds.1],
-        }
-    }
-    pub fn reset(&mut self) {
-        self.cells = vec![GridCell::new(); self.bounds.0 * self.bounds.1];
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
-pub struct Location(usize, usize);
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
-pub struct Offset(isize, isize);
-
-pub trait GridIndex<U> {
-    fn at_location_mut(&mut self, l: Location) -> &mut U;
-    fn at_location(&self, l: Location) -> &U;
-
-    fn get_index(&self, l: Location) -> usize;
-    fn get_location<T: Into<usize>>(&self, index: T) -> Location;
-}
-
-impl<U> GridIndex<U> for Grid<U> {
-    fn at_location_mut(&mut self, l: Location) -> &mut U {
-        let i = self.get_index(l);
-        &mut self.cells[i]
-    }
-    fn at_location(&self, l: Location) -> &U {
-        let i = self.get_index(l);
-        &self.cells[i]
-    }
-    fn get_index(&self, l: Location) -> usize {
-        let Location(x_u64, y_u64) = l;
-        let x: usize = x_u64.try_into().unwrap();
-        let y: usize = y_u64.try_into().unwrap();
-        let w: usize = self.bounds.0.try_into().unwrap();
-        w * y + x
-    }
-    fn get_location<T: Into<usize>>(&self, index: T) -> Location {
-        let w: usize = self.bounds.0.try_into().unwrap();
-        let i: usize = index.try_into().unwrap();
-        Location(
-            (i % w).try_into().unwrap(),
-            ((i - (i % w)) / w).try_into().unwrap(),
-        )
-    }
-}
 
 impl Enqueue<Simulator> for Vec<Event<EventData>> {
     fn enqueue(&mut self, source: Address<usize>, target: Address<usize>, data: EventData) {
@@ -1088,6 +1021,8 @@ impl Simulation for Simulator {
                 // TODO: figure out how to count how long it took to reach world.epoch.
                 let old = agent.data.epoch;
                 agent.data.epoch = max(gdata.epoch, agent.data.epoch);
+                println!("New Epoch: {}", agent.data.epoch);
+                
                 // Double spenders don't actually update.
                 if let AgentRole::Consumer(cdata) = &agent.data.role {
                     if cdata.double_spend_probability != 0.0 {
@@ -1097,6 +1032,7 @@ impl Simulation for Simulator {
             }
             EventData::Synchronize(_) => {
                 if agent.data.epoch < world.epoch {
+                    println!("New Epoch by synchronization: {}", world.epoch);
                     agent.data.epoch = world.epoch;
                 }
             }
@@ -1731,18 +1667,26 @@ impl Configuration {
 }
 
 fn main() {
+    let graph: Vec<Vec<u64>> = graph_utils::read_graph().unwrap();
     // Use configured seed as root to spawn off all rngs.
     let mut rng: StdRng = SeedableRng::seed_from_u64(99);
     let mgr_seed = rng.gen::<u64>();
-    // NYC 29,729/sqmil;  300.6 sq mi= 17.33*17.33
-    // Let's aim smaller.  10*10 = 100, so 2972900
+    // NYC 29,729/sqmil;  300.6 sq mi= 17.33*17.33 (0xuki: square grid most likely)
+    // Let's aim smaller.  10*10 = 100, so 2972900 
     // Let's aim smaller.  3 * 3 = 9 so 297290
     let bounds = (8, 8);
     let helper = SimulatorHelpers::new(
         bounds.clone(),
-        &RngConfiguration::new(mgr_seed, 3.0, 1.8, 2.0, 2.0, 20.0),
+        &RngConfiguration::new(
+            mgr_seed, 
+            3.0, 
+            1.8, 
+            2.0,
+            2.0, 
+            20.0
+        ),
     );
-
+    // (0xuki: double check the numbers here)
     let num_consumers = 5000; //237832; // 2972900; // Full NYC pop 18867000; // 139; // 10000;  // Scaled NYC pop
     let num_double_spenders = (num_consumers / 2000) + 1;
     let num_merchants = (num_consumers / 115) + 1;
@@ -1761,7 +1705,7 @@ fn main() {
         let b = c % num_banks;
         coinage.push(Coin {
             id: coin_index,
-            value: 1,
+            value: 1, // all coins in the simulation have value 1!
             copied: false,
             history: vec![usize::MAX, b], // mint is usize::MAX
             tx_history: vec![0, 1],       // Don't need randomness since this is controlled.
@@ -1866,6 +1810,7 @@ fn main() {
                         wid_low_watermark: 2,
                         account_balance: default_balance,
                         last_requested_step: 0,
+                        // (0xuki) TODO: change bank assignment procedure to account for distance to the bank!
                         bank: c % num_banks, // ensure we match the balance with the coins. TODO: Register() to get bank and balance.
                     }),
                 },
