@@ -2,42 +2,94 @@ use std::{fs::File, io::{self, BufRead}};
 
 use serde::{Deserialize, Serialize};
 
-pub fn read_graph() -> io::Result<Vec<Vec<u64>>> {
-    let mut file = File::open("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/barabasi_albert_test.txt")?;
-    let mut reader = io::BufReader::new(file);
-    
-    let number_of_vertices = reader.lines().count();
-    println!("Number of vertices in a graph that is being read: {}", number_of_vertices);
-    let mut graph: Vec<Vec<u64>> = Vec::new(); 
 
-    file = File::open("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/barabasi_albert_test.txt")?;
-    reader = io::BufReader::new(file);
 
-    for neighbours_serialized in reader.lines() {
-        let neighbours: Vec<u64> = 
-            neighbours_serialized?
-                .split(' ')
-                .into_iter()
-                .skip(1) // skip the idx of the node since it is irrelevant
-                .map(|s| { 
-                    s.parse::<u64>().expect("Input is not an integer!")
-                })
-                .collect();
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
+pub struct GraphVertexIndex(usize);
 
-        graph.push(neighbours);
-    }
 
-    for (idx, node_neighbours) in (&graph).into_iter().enumerate() {
-        print!("Node #{idx} neighbours: ");
-
-        for neighbour in node_neighbours {
-            print!("{neighbour} ");
-        }   
-        println!();
-    }
-
-    Ok(graph)      
+pub struct Vertex {
+    idx: usize,
+    agents: Vec<usize>,
+    resources: Vec<usize>,
 }
+
+impl Vertex {
+    pub fn new(idx: usize) -> Self {
+        Self {
+            idx,
+            agents: Vec::new(),
+            resources: Vec::new(),
+        }
+    }
+}
+
+pub struct SimulationGraph {
+    adjacency_list: Vec<Vec<usize>>,
+    vertices: Vec<Vertex>
+}
+
+impl SimulationGraph {
+    pub fn new(path: &str) -> io::Result<Self> {
+        let mut file = File::open(path)?;
+        let mut reader = io::BufReader::new(file);
+        
+        let number_of_vertices = reader.lines().count();
+        println!("Number of vertices in a graph that is being read: {}", number_of_vertices);
+        let mut graph: Vec<Vec<usize>> = Vec::new(); 
+    
+        file = File::open(path)?;
+        reader = io::BufReader::new(file);
+    
+        for neighbours_serialized in reader.lines() {
+            let neighbours: Vec<usize> = 
+                neighbours_serialized?
+                    .split(' ')
+                    .into_iter()
+                    .skip(1) // skip the idx of the node since it is irrelevant
+                    .map(|s| { 
+                        s.parse::<usize>().expect("Input is not an integer!")
+                    })
+                    .collect();
+    
+            graph.push(neighbours);
+        }
+    
+        for (idx, node_neighbours) in (&graph).into_iter().enumerate() {
+            print!("Node #{idx} neighbours: ");
+    
+            for neighbour in node_neighbours {
+                print!("{neighbour} ");
+            }   
+            println!();
+        }
+    
+        Ok(Self {
+            adjacency_list: graph,
+            vertices: Vec::new()
+        })      
+    }
+
+    pub fn reset(&mut self) {
+        self.vertices = Vec::new();
+        for idx in 0..self.vertices.len() {
+            self.vertices.push(Vertex::new(idx));
+        }
+    }
+
+    pub fn at_location_mut(&mut self, idx: GraphVertexIndex) -> &mut Vertex {
+        return &mut self.vertices[idx.0];     
+    }
+    
+    pub fn at_location(&self, idx: GraphVertexIndex) -> &Vertex {
+        return &self.vertices[idx.0];
+    }
+
+    pub fn neighbours(&self, idx: GraphVertexIndex) -> &Vec<usize> {
+        return &self.adjacency_list[idx.0];
+    }
+}
+
 
 
 
@@ -77,8 +129,7 @@ impl Grid<GridCell> {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
 pub struct Location(usize, usize);
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
-pub struct Offset(isize, isize);
+
 
 pub trait GridIndex<U> {
     fn at_location_mut(&mut self, l: Location) -> &mut U;
@@ -87,6 +138,8 @@ pub trait GridIndex<U> {
     fn get_index(&self, l: Location) -> usize;
     fn get_location<T: Into<usize>>(&self, index: T) -> Location;
 }
+
+
 
 impl<U> GridIndex<U> for Grid<U> {
     fn at_location_mut(&mut self, l: Location) -> &mut U {

@@ -41,6 +41,7 @@ async fn get_revoked_groups(
     uri: &String,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     // TODO: Parameterize
+    // (ukitta555) revoked groups
     if let Ok(mut client) = TokenMapClient::multiconnect(&Uri::try_from(uri.clone())?).await {
         trace!("Connected to tokenmap!");
         let request = RevocationDataRequest {

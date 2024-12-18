@@ -16,6 +16,7 @@
 
 pub mod graph_utils;
 
+use graph_utils::SimulationGraph;
 use rand::prelude::*;
 use rand::{rngs::StdRng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -1667,7 +1668,9 @@ impl Configuration {
 }
 
 fn main() {
-    let graph: Vec<Vec<u64>> = graph_utils::read_graph().unwrap();
+    let graph: SimulationGraph = SimulationGraph::new(
+        "/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/barabasi_albert_test.txt"
+    ).unwrap();
     // Use configured seed as root to spawn off all rngs.
     let mut rng: StdRng = SeedableRng::seed_from_u64(99);
     let mgr_seed = rng.gen::<u64>();
