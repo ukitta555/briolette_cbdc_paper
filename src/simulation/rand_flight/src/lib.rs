@@ -72,6 +72,11 @@ impl<R: rand::RngCore, RD: rand_distr::Distribution<f64>, T, const D: usize> Fli
             bounds: bounds,
         })
     }
+
+    pub fn step_graph(&mut self, neighbours: &Vec<usize>, end: &mut [u64; 1]) {
+        let val: f64 = self.distribution.sample(&mut self.rng);
+        end[0] = neighbours[(val * (neighbours.len() as f64)).floor() as usize] as u64;
+    }
 }
 
 // Should the struct be typed instead?
@@ -101,7 +106,7 @@ impl<R: rand::RngCore, RD: rand_distr::Distribution<f64>> Step<u64, 1> for Fligh
             }
             end[0] = start[0] - q;
         }
-    }
+    }    
 }
 
 impl<R: rand::RngCore, RD: rand_distr::Distribution<f64>> Step<u64, 2> for Flight<R, RD, u64, 2> {

@@ -17,6 +17,7 @@
 // Expose default implementations
 pub mod clients;
 pub mod extras;
+pub mod graph_utils;
 
 use rand::prelude::*;
 use serde::de::DeserializeOwned;
@@ -201,7 +202,7 @@ impl<S: Simulation> EventQueue<S> {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WorldView<S: Simulation> {
     population: Box<S::ViewPopulation>,
-    data: S::View,
+    data: S::View
 }
 
 impl<S: Simulation> WorldView<S> {
@@ -209,11 +210,12 @@ impl<S: Simulation> WorldView<S> {
         Self { population, data }
     }
     pub fn population(&self) -> &S::ViewPopulation {
-        return &self.population;
+        &self.population
     }
     pub fn data(&self) -> &S::View {
-        return &self.data;
+        &self.data
     }
+
 }
 
 // Simulator should have Population? Or does manager call in with it?

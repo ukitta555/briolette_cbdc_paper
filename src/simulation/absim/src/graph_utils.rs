@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
-pub struct GraphVertexIndex(usize);
+pub struct GraphVertexIndex(pub usize);
 
-
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct Vertex {
     idx: usize,
-    agents: Vec<usize>,
-    resources: Vec<usize>,
+    pub agents: Vec<usize>,
+    pub resources: Vec<usize>,
 }
 
 impl Vertex {
@@ -24,9 +24,10 @@ impl Vertex {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct SimulationGraph {
-    adjacency_list: Vec<Vec<usize>>,
-    vertices: Vec<Vertex>
+    pub adjacency_list: Vec<Vec<usize>>,
+    pub vertices: Vec<Vertex>
 }
 
 impl SimulationGraph {
@@ -64,29 +65,41 @@ impl SimulationGraph {
             println!();
         }
     
+        let mut vertices = Vec::new();
+        for idx in 0..graph.len() {
+            vertices.push(Vertex::new(idx));
+        }
+
         Ok(Self {
             adjacency_list: graph,
-            vertices: Vec::new()
+            vertices,
         })      
     }
 
     pub fn reset(&mut self) {
         self.vertices = Vec::new();
-        for idx in 0..self.vertices.len() {
+        for idx in 0..self.adjacency_list.len() {
             self.vertices.push(Vertex::new(idx));
         }
     }
 
-    pub fn at_location_mut(&mut self, idx: GraphVertexIndex) -> &mut Vertex {
-        return &mut self.vertices[idx.0];     
+    pub fn at_location_mut(&mut self, idx: &GraphVertexIndex) -> &mut Vertex {
+        &mut self.vertices[idx.0]     
     }
     
-    pub fn at_location(&self, idx: GraphVertexIndex) -> &Vertex {
-        return &self.vertices[idx.0];
+    pub fn at_location(&self, idx: &GraphVertexIndex) -> &Vertex {
+        &self.vertices[idx.0]
     }
 
-    pub fn neighbours(&self, idx: GraphVertexIndex) -> &Vec<usize> {
-        return &self.adjacency_list[idx.0];
+    pub fn neighbours(&self, idx: &GraphVertexIndex) -> &Vec<usize> {
+        &self.adjacency_list[idx.0]
+    }
+
+    pub fn get_index(&self, idx: GraphVertexIndex) -> usize {
+        idx.0
+    }
+    pub fn get_location(&self, idx: usize) -> usize {
+        idx
     }
 }
 
