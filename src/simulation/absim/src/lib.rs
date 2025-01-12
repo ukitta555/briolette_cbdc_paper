@@ -115,7 +115,7 @@ pub struct EventQueue<S: Simulation> {
     world: Vec<Event<S::Event>>,
     population: Vec<Event<S::Event>>,
 }
-
+    
 pub trait Enqueue<S: Simulation>: Sized + Send + Sync + Clone {
     fn enqueue(&mut self, source: Address<usize>, target: Address<usize>, data: S::Event);
 }
@@ -295,11 +295,11 @@ pub trait SimulationClient<S: Simulation>: Send {
 
 // Fn(n_steps,&
 pub trait ManagerObserver<S: Simulation>:
-    Fn(usize, &S::World, &S::SimulationPopulation) -> () + Send + 'static
+    Fn(usize, &S::World, &S::SimulationPopulation, &mut bool, &str) -> () + Send + 'static
 {
 }
 impl<S: Simulation, T> ManagerObserver<S> for T where
-    T: Fn(usize, &S::World, &S::SimulationPopulation) -> () + Send + 'static
+    T: Fn(usize, &S::World, &S::SimulationPopulation, &mut bool, &str) -> () + Send + 'static
 {
 }
 
@@ -319,7 +319,7 @@ pub trait ManagerInterface<S: Simulation> {
         delay: usize,
     );
     fn world(&mut self) -> &mut S::World;
-    fn run(&mut self, max_steps: usize);
+    fn run(&mut self, max_steps: usize, experiment_results_filepath: &str);
     fn register_observer<O>(&mut self, steps: usize, cb: O)
     where
         O: ManagerObserver<S> + 'static;
@@ -364,12 +364,16 @@ impl<S: Simulation> ManagerInterface<S> for Manager<S> {
     fn world(&mut self) -> &mut S::World {
         &mut self.world
     }
-    fn run(&mut self, max_steps: usize) {
+    fn run(&mut self, max_steps: usize, experiment_result_filepath: &str) {
         let client_count = self.clients.len();
         let mut queue = EventQueue::new();
+        let mut end_simulation_flag: bool = false; 
         for s in 0..max_steps {
+            if end_simulation_flag {
+                break;
+            }
             let mut active_client = 0;
-            let mut view_id = 0;
+            let mut vertex_idx = 0;
             // Pull in any manager interface events.
             queue.append(&mut self.queue);
             self.queue.clear();
@@ -382,14 +386,14 @@ impl<S: Simulation> ManagerInterface<S> for Manager<S> {
 
             while let Some(view) = self
                 .simulator
-                .worldview(view_id, &self.population, &self.world)
+                .worldview(vertex_idx, &self.population, &self.world)
             {
                 // Farm out regions to client
                 // This MUST be deterministic or it breaks replay.
                 active_client = (active_client + 1) % client_count;
                 let client = &mut self.clients[active_client];
                 client.run(s, &view); // Clients ONLY generate, never apply.
-                view_id += 1;
+                vertex_idx += 1;
             }
             for client in &mut self.clients {
                 client.collect(&mut queue);
@@ -429,13 +433,13 @@ impl<S: Simulation> ManagerInterface<S> for Manager<S> {
             // World applies last to allow location updates, etc.
             self.simulator
                 .world_apply(&mut self.world, &self.population, &queue.world);
-
+            
             // Clear for the next step.
             queue.clear();
             for observer in &self.observers {
                 if s % observer.steps == 0 {
                     let cb = &observer.cb;
-                    cb(s, &self.world, &self.population);
+                    cb(s, &self.world, &self.population, &mut end_simulation_flag, experiment_result_filepath);
                 }
             }
         }

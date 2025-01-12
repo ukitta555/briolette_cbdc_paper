@@ -231,7 +231,7 @@ impl Simulation for Simulator {
             ViewData {
                 id: id,
                 step: world.step,
-                bounds: world.bounds,
+                bounds: world.graph_size,
                 resource: resource,
                 epoch: world.epoch,
                 epochs: world.epochs.clone(),
@@ -263,7 +263,7 @@ impl Simulation for Simulator {
 
         match &agent.data.role {
             // Generate bank events
-            AgentRole::Bank(_data) => {
+            AgentRole::Bank(_dataf) => {
                 // Syncs every tick even if it doesnt validate every tick.
                 queue.enqueue(
                     Address::AgentId(agent.id),
@@ -276,8 +276,7 @@ impl Simulation for Simulator {
             AgentRole::Merchant(data) => {
                 if let Some(_tx_step) = data.last_tx_step {
                     // TODO: Make deposit timeframe configurable
-                    // Deposit 4 times a day.
-                    if view.data().step % 8 == 0 {
+                    if view.data().step % data.sync_frequency == 0 {
                         // Construct a dummy bank so we can reuse do_transaction()
                         let mut bank = Agent {
                             id: data.bank,
@@ -305,6 +304,11 @@ impl Simulation for Simulator {
                                 queue,
                             );
                         }
+                        queue.enqueue(
+                            Address::AgentId(agent.id),
+                            Address::World,
+                            EventData::Synchronize(SynchronizeData {}),
+                        );
                     }
                 }
             }
@@ -328,10 +332,11 @@ impl Simulation for Simulator {
                     queue.enqueue(
                         Address::AgentId(agent.id),
                         Address::World,
-                        EventData::Synchronize(SynchronizeData {}),
+                        EventData::Synchronize(SynchronizeData {}), // effectively means "going to the bank"!
                     );
                     count += 1;
                 }
+
                 // TODO Add low threshold for withdrawl and other models like withdraw-on-demand!
                 if agent.data.coins.len() < 2
                     && data.account_balance > 5
@@ -345,22 +350,30 @@ impl Simulation for Simulator {
                             amount: min(data.account_balance, 5),
                             epoch: agent.data.epoch,
                             role: RequestRole::Consumer,
+                            source_location: agent.data.location
                         }),
                     );
                     // println!("[Agent {}] My bank is {} and my coins are {} and my balance is {}", agent.id, data.bank, agent.data.coins.len(), data.account_balance);
                     count += 1;
                 }
+
                 // If the consumer can and wants to transact.
                 // TODO: Add support for _multiple_ transaction per-step, like at a hawker market
                 // Add support for peer and merchant in same step.
                 // E.g., avail_wids = wids; avail_coins = coins.len();
                 // while cnt < per_period && avail_wids > 0 && avail_coins > 0 ...
-                if agent.data.registered && agent.data.coins.len() > 0 && data.wids > 0 {
+                if agent.data.registered && agent.data.coins.len() > 0 && data.wids > 0 { 
                     let mut peer = None;
                     if helper.probability_check(&data.p2m_distribution, data.p2m_probability) {
                         let merchant_iter = view.population().agents.iter().filter(|entry| {
-                            match entry.1.data.role {
-                                AgentRole::Merchant(_) => true,
+                            match &entry.1.data.role {
+                                AgentRole::Merchant(_) => {
+                                    // println!("{:?}, {:?}", entry.1.data.location, agent.data.location);
+                                    if entry.1.data.location == agent.data.location {
+                                        return true;   
+                                    }
+                                    false
+                                },
                                 _ => false,
                             }
                         });
@@ -373,7 +386,13 @@ impl Simulation for Simulator {
                         let peer_iter =
                             view.population().agents.iter().filter(|entry| {
                                 match entry.1.data.role {
-                                    AgentRole::Consumer(_) => true,
+                                    AgentRole::Consumer(_) => {
+                                        // println!("{:?}, {:?}", entry.1.data.location, agent.data.location);
+                                        if entry.1.data.location == agent.data.location {
+                                            return true;   
+                                        }
+                                        false
+                                    },
                                     _ => false,
                                 }
                             });
@@ -417,6 +436,7 @@ impl Simulation for Simulator {
                             &agent.data.location
                         );
                     // TODO: Figure out if we can get rid of the crawl without incurring worse overhead.
+                    // println!("Moving agent {} from {} to new location {}", agent.id, agent.data.location.0, new_location.0);
                     queue.enqueue(
                         Address::AgentId(agent.id),
                         Address::NoAddress,
@@ -537,6 +557,7 @@ impl Simulation for Simulator {
                             break;
                         }
                     }
+                    // println!("{}", removals.len());
                     assert!(removals.len() == 0);
                 }
             }
@@ -575,62 +596,66 @@ impl Simulation for Simulator {
                         }
                     }
                     EventData::RequestTransaction(rt_data) => {
-                        // A consumer is requesting funds which they should only request if they have
-                        // the balance... but balance and coins may not match.
+                            // A consumer is requesting funds which they should only request if they have
+                            // the balance... but balance and coins may not match.
                         if event.target == Address::AgentId(agent.id) {
-                            if let Address::AgentId(source) = event.source {
-                                // Construct a dummy agent so we can reuse do_transaction()
-                                let mut target_data: AgentData = AgentData::default();
-                                match rt_data.role {
-                                    RequestRole::Merchant => {
-                                        target_data.role =
-                                            AgentRole::Merchant(MerchantData::default())
+                            // if rt_data.source_location == agent.data.location {
+                                if let Address::AgentId(source) = event.source {
+                                    // Construct a dummy agent so we can reuse do_transaction()
+                                    let mut target_data: AgentData = AgentData::default();
+                                    match rt_data.role {
+                                        RequestRole::Merchant => {
+                                            target_data.role =
+                                                AgentRole::Merchant(MerchantData::default())
+                                        }
+                                        RequestRole::Bank => {
+                                            target_data.role = AgentRole::Bank(BankData::default())
+                                        }
+                                        _ => {} // Consumer is the default.
                                     }
-                                    RequestRole::Bank => {
-                                        target_data.role = AgentRole::Bank(BankData::default())
+                                    target_data.epoch = rt_data.epoch;
+                                    let target = Agent {
+                                        id: source,
+                                        data: target_data,
+                                    };
+                                    // TODO: Should apply() also just get a pre-fab ViewData that matches the agent's ViewData on generate()?
+                                    let view_data = ViewData {
+                                        id: 0,
+                                        step: world.step,
+                                        bounds: world.graph_size,
+                                        resource: ResourceData::default(),
+                                        epoch: world.epoch,
+                                        epochs: world.epochs.clone(),
+                                        graph: world.graph.clone()
+                                    };
+                                    let mut pending = Vec::new();
+                                    // WE must delete the coins or mark them as spent otherwise we'll double
+                                    // spend and search oru whole list for coins we don't have.
+                                    let mut pop_count = 0;
+                                    self.do_transaction(
+                                        &view_data,
+                                        helper,
+                                        agent,
+                                        &target,
+                                        rt_data.amount,
+                                        false,
+                                        true,
+                                        &mut pop_count,
+                                        &mut pending,
+                                    );
+                                    agent.data.pending.append(&mut pending);
+                                    for _p in 0..pop_count {
+                                        agent.data.coins.pop();
                                     }
-                                    _ => {} // Consumer is the default.
+                                    // Tag the last event so we don't drain this on a repeat call.
+                                    // Hacky but why waste yet another variable... :)
+                                    if let Some(e) = agent.data.pending.iter_mut().last() {
+                                        e.id = world.step;
+                                    }
                                 }
-                                target_data.epoch = rt_data.epoch;
-                                let target = Agent {
-                                    id: source,
-                                    data: target_data,
-                                };
-                                // TODO: Should apply() also just get a pre-fab ViewData that matches the agent's ViewData on generate()?
-                                let view_data = ViewData {
-                                    id: 0,
-                                    step: world.step,
-                                    bounds: world.bounds,
-                                    resource: ResourceData::default(),
-                                    epoch: world.epoch,
-                                    epochs: world.epochs.clone(),
-                                    graph: world.graph.clone()
-                                };
-                                let mut pending = Vec::new();
-                                // WE must delete the coins or mark them as spent otherwise we'll double
-                                // spend and search oru whole list for coins we don't have.
-                                let mut pop_count = 0;
-                                self.do_transaction(
-                                    &view_data,
-                                    helper,
-                                    agent,
-                                    &target,
-                                    rt_data.amount,
-                                    false,
-                                    true,
-                                    &mut pop_count,
-                                    &mut pending,
-                                );
-                                agent.data.pending.append(&mut pending);
-                                for _p in 0..pop_count {
-                                    agent.data.coins.pop();
-                                }
-                                // Tag the last event so we don't drain this on a repeat call.
-                                // Hacky but why waste yet another variable... :)
-                                if let Some(e) = agent.data.pending.iter_mut().last() {
-                                    e.id = world.step;
-                                }
-                            }
+                            // } else {
+                            //     println!("Agent isn't in the same node as the bank of interest!");
+                            // }
                         }
                     }
                     EventData::Transact(txn) => {
@@ -821,14 +846,7 @@ impl Simulation for Simulator {
                 .agents
                 .push(agent.id);
         }
-        for r in 0..world.resources.len() {
-            let resource = &world.resources[r];
-            world
-                .graph
-                .at_location_mut(&mut resource.location.clone())
-                .resources
-                .push(r); // index == id
-        }
+
 
         // Handle operator events now.
         for event in events {
@@ -854,8 +872,8 @@ impl Simulation for Simulator {
                             // If we already know this coin is bad, just collect the stats and move on.
                             if let Some(step) = known_coin_state.revoked {
                                 bad_coins.push(coin.id);
-                                // For this, we have to compute the different between the fork point and the history.
-                                if let Some(txn_fork) = known_coin_state.fork_txn {
+                                // For this, we have to compute the difference between the fork point and the history.
+                                if let Some(txn_fork) = known_coin_state.fork_txn { // txn_fork == index in tx history where things start to diverge
                                     // If a double spent coin is validated against the last known good history, then it shows up here because its
                                     // been revoked even though it will not have a txn_fork entry to consume.  We will push a 0 for that instead since
                                     // that is the reserved tx_history for minting.
@@ -866,6 +884,7 @@ impl Simulation for Simulator {
                                             world.statistics.double_spent_most_txns,
                                             coin.history.len() - txn_fork,
                                         );
+                                        world.statistics.double_spent_txs_measurements.push(coin.history.len() - txn_fork);
                                     } else {
                                         // To show we've now seen an untransferred bad coin.
                                         // TODO: Should we track if the double spender themselves checks in? Later, yes.
@@ -889,16 +908,16 @@ impl Simulation for Simulator {
 
                                     assert!(txn_fork <= coin.history.len());
                                     println!(
-                                    "[operator] recovered double spend of coin {} (forked by Agent {}) after {} txns and {} steps",
-                                    coin.id, coin.history[txn_fork], coin.history.len() - txn_fork, world.step - step
-                                );
+                                        "[operator] recovered double spend of coin {} (forked by Agent {}) after {} txns and {} steps",
+                                        coin.id, coin.history[txn_fork], coin.history.len() - txn_fork, world.step - step
+                                    );
                                 }
                                 // in steps, not transfers. Transfers we can get from the history.
                                 world.statistics.double_spent_longest_life = max(
                                     world.statistics.double_spent_longest_life,
                                     world.step - step,
                                 );
-
+                                world.statistics.double_spent_life_measurements.push(world.step - step);
                                 continue;
                             }
                             let known_coin = &known_coin_state.coin;
@@ -936,18 +955,18 @@ impl Simulation for Simulator {
                                 bad_coins.push(coin.id);
                                 // Revoke the coin in our state map.
                                 if let Some(entry) = ds_entry {
-                                    known_coin_state.revoked = Some(coin.step_history[entry]);
-                                    known_coin_state.fork_txn = Some(entry);
-                                    known_coin_state.forks.push(coin.tx_history[entry + 1]);
+                                    known_coin_state.revoked = Some(coin.step_history[entry]); // step at which the coin was revoked; at this step histories are still equal
+                                    known_coin_state.fork_txn = Some(entry); // idx for arrays; last idx for which entries are equal
+                                    known_coin_state.forks.push(coin.tx_history[entry + 1]); // point where txs start to differ; "double-spent hash"
                                 }
 
                                 // Create revocation sync data and update global state.
                                 if world.epochs[world.epoch].revocation.contains(&ds_agent) == false
                                 {
                                     println!(
-                                    "[operator] double spending by agent {} detected. Revoking . . .",
-                                    ds_agent
-                                );
+                                        "[operator] double spending by agent {} detected. Revoking . . .",
+                                        ds_agent
+                                    );
                                     println!("Coin: {:?}", coin);
                                     println!("Known coin: {:?}", known_coin);
                                     let last_step = world.epochs[world.epoch].step;
@@ -985,9 +1004,9 @@ impl Simulation for Simulator {
                                 let survived_steps =
                                     world.step - coin.step_history[ds_entry.unwrap() + 1];
                                 println!(
-                                "[operator] recovered double spend of coin {} after {} txns and {} steps",
-                                coin.id, survived_txns, survived_steps,
-                            );
+                                    "[operator] recovered double spend of coin {} after {} txns and {} steps",
+                                    coin.id, survived_txns, survived_steps,
+                                );
                                 /*
                                     println!("New {:?}", coin.history);
                                     println!("New {:?}", coin.tx_history);
@@ -1018,11 +1037,12 @@ impl Simulation for Simulator {
                         data: EventData::ValidateResponse(resp_data),
                     });
                 }
-                EventData::ValidateResponse(_resp_data) => {}
+                EventData::ValidateResponse(_resp_data) => {} // fake response; don't care tbh
                 _ => todo!(),
             }
         }
     }
+
     fn population_apply(
         &self,
         population: &mut Self::SimulationPopulation,

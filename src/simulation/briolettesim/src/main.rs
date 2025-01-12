@@ -22,7 +22,9 @@ use rand::{rngs::StdRng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use simulator::Simulator;
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Write;
+use std::{io, process};
 
 use absim::clients::LocalSimulationClient;
 use absim::extras::SimulationPopulation;
@@ -47,12 +49,12 @@ struct Coin {
 
 // Used in the coin map to track counterfeiting impact
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-struct CoinState {
-    coin: Coin,
-    revoked: Option<usize>, // Step of revocation
-    fork_txn: Option<usize>,
-    forks: Vec<usize>, // List of known forks so we can accurately coin recoveries.
-}
+    struct CoinState {
+        coin: Coin,
+        revoked: Option<usize>, // Step of revocation
+        fork_txn: Option<usize>,
+        forks: Vec<usize>, // List of known forks so we can accurately coin recoveries.
+    }
 
 impl CoinState {
     pub fn new(coin: Coin) -> Self {
@@ -117,9 +119,17 @@ pub struct Statistics {
     double_spent_longest_life: usize,
     double_spent_most_txns: usize,
     validate_total: usize,
+    #[serde(skip_serializing)]
+    double_spent_life_measurements: Vec<usize>,
+    #[serde(skip_serializing)]
+    double_spent_txs_measurements: Vec<usize>
 }
 
 impl Statistics {
+    pub fn exit(&self) -> bool {
+        return self.double_spenders_total == self.double_spenders_revoked_total && self.double_spenders_total != 0; 
+    }
+    
     pub fn update(&mut self, stats: &Statistics) {
         self.potential_double_spender_max += stats.potential_double_spender_max;
         self.double_spenders_total += stats.double_spenders_total;
@@ -180,8 +190,9 @@ pub struct ConsumerData {
 pub struct MerchantData {
     lifetime: usize, // in steps
     // Location native to Agent
-    sync_probability: f64,
-    sync_distribution: SupportedDistributions,
+    // sync_probability: f64,
+    // sync_distribution: SupportedDistributions,
+    sync_frequency: usize, 
     account_balance: usize,
     last_tx_step: Option<usize>,
     bank: usize,
@@ -312,6 +323,7 @@ pub struct RequestTransactionData {
     amount: usize,
     epoch: usize, // Since we can't see it during apply.
     role: RequestRole,
+    source_location: GraphVertexIndex 
 }
 
 // Any event with World as a destination is a world event.
@@ -546,10 +558,10 @@ impl RngConfiguration {
 pub struct WorldData {
     // World
     step: usize, // GlobalTick event
-    bounds: usize,
+    graph_size: usize,
     graph: SimulationGraph,
     resources: Vec<ResourceData>,
-    statistics: Statistics,
+    pub statistics: Statistics,
     // Operator data
     epoch: usize, // current epoch
     epochs: Vec<SyncState>,
@@ -640,11 +652,11 @@ fn main() {
     // NYC 29,729/sqmil;  300.6 sq mi= 17.33*17.33 (0xuki: square grid most likely)
     // Let's aim smaller.  10*10 = 100, so 2972900 
     // Let's aim smaller.  3 * 3 = 9 so 297290
-    let bounds = graph.adjacency_list.len();
-    println!("{bounds}");
+    let total_vertices_in_graph = graph.adjacency_list.len();
+    println!("{total_vertices_in_graph}");
 
     let helper = SimulatorHelpers::new(
-        bounds.clone(),
+        total_vertices_in_graph.clone(),
         &RngConfiguration::new(
             mgr_seed, 
             3.0, 
@@ -653,18 +665,19 @@ fn main() {
             2.0, 
             1.0
         ),
-    );
+    ); 
+
     // (0xuki: double check the numbers here)
-    let num_consumers = 5000; //237832; // 2972900; // Full NYC pop 18867000; // 139; // 10000;  // Scaled NYC pop
-    let num_double_spenders = (num_consumers / 2000) + 1;
-    let num_merchants = (num_consumers / 115) + 1;
-    let num_banks = (num_consumers / 77000) + 1;
+    let num_consumers = 80; //237832; // 2972900; // Full NYC pop 18867000; // 139; // 10000;  // Scaled NYC pop
+    let num_double_spenders = 20;
+    let num_merchants = 50;
+    let num_banks = 5;
 
     // Setup init stats
     let mut upstats = Statistics::default();
 
     let default_balance = 500;
-    // Create enough coinage for every consumer to have $20 in the bank to get started.
+    // Create enough coinage for every consumer to have $500 in the bank to get started.
     let mut coinage = Vec::new();
     // Use a map so we can remove these easily before we simulate.
     let mut bank_coins: HashMap<usize, Vec<Coin>> = HashMap::new();
@@ -694,7 +707,7 @@ fn main() {
         SimulationPopulation::new(),
         WorldData {
             step: 0,
-            bounds: bounds.clone(),
+            graph_size: total_vertices_in_graph,
             graph,
             resources: vec![],
             statistics: Statistics::default(),
@@ -717,14 +730,14 @@ fn main() {
         mgr.add_client(Box::new(LocalSimulationClient::new(Simulator::new(
             client_seed,
             SimulatorHelpers::new(
-                bounds.clone(),
+                total_vertices_in_graph.clone(),
                 &RngConfiguration::new(client_seed, 3.0, 1.8, 2.0, 2.0, 1.0),
             ),
         ))));
     }
     // Create a few banks and expect their IDs to be 0..num_banks
     for b in 0..num_banks {
-        let idx = rng.gen_range(0..mgr.world().bounds);
+        let idx = rng.gen_range(0..mgr.world().graph_size);
         mgr.enqueue(
             Address::NoAddress,
             Address::Population,
@@ -744,7 +757,7 @@ fn main() {
 
     // Randomly place 10k consumers
     for c in 0..num_consumers {
-        let idx = rng.gen_range(0..mgr.world().bounds);
+        let idx = rng.gen_range(0..mgr.world().graph_size);
         mgr.enqueue(
             Address::NoAddress,
             Address::Population,
@@ -759,9 +772,9 @@ fn main() {
                         lifetime: 43800, // 5 years in hours for phone lifetime.
                         sync_probability: 0.01,
                         sync_distribution: SupportedDistributions::Uniform,
-                        p2m_probability: 0.8,
+                        p2m_probability: 0.2,
                         p2m_distribution: SupportedDistributions::Uniform,
-                        p2p_probability: 0.1,
+                        p2p_probability: 0.6,
                         p2p_distribution: SupportedDistributions::Uniform,
                         double_spend_probability: 0.0,
                         double_spend_distribution: SupportedDistributions::Uniform,
@@ -787,7 +800,7 @@ fn main() {
 
     // Randomly place double spenders
     for _ in 0..num_double_spenders {
-        let idx = rng.gen_range(0..mgr.world().bounds);
+        let idx = rng.gen_range(0..mgr.world().graph_size);
         mgr.enqueue(
             Address::NoAddress,
             Address::Population,
@@ -829,7 +842,7 @@ fn main() {
 
     // Randomly place double spenders in the future
     for _ in 0..num_double_spenders {
-        let idx = rng.gen_range(0..mgr.world().bounds);
+        let idx = rng.gen_range(0..mgr.world().graph_size);
         mgr.enqueue_delayed(
             Address::NoAddress,
             Address::Population,
@@ -866,7 +879,7 @@ fn main() {
                 },
                 count: 1,
             })],
-            40,
+            15,
         );
     }
 
@@ -880,7 +893,7 @@ fn main() {
 
     // Randomly place consumers/115 merchants
     for _ in 0..num_merchants {
-        let idx = rng.gen_range(0..(mgr.world().bounds));
+        let idx = rng.gen_range(0..(mgr.world().graph_size));
         mgr.enqueue(
             Address::NoAddress,
             Address::Population,
@@ -893,8 +906,9 @@ fn main() {
                     pending: vec![],
                     role: AgentRole::Merchant(MerchantData {
                         lifetime: 183960, // 21 years in hours -- avg lifespan of company S&P.
-                        sync_probability: 0.01,
-                        sync_distribution: SupportedDistributions::Uniform,
+                        sync_frequency: 8, // every `sync_frequency` hours make a transfer to the bank -> sync as a result!
+                        // sync_probability: 0.01, 
+                        // sync_distribution: SupportedDistributions::Uniform,
                         account_balance: 0,
                         last_tx_step: None,
                         bank: rng.gen_range(0..num_banks),
@@ -906,7 +920,7 @@ fn main() {
     }
 
     // Install network probability in every grid point.
-    for idx in 0..bounds {
+    for idx in 0..total_vertices_in_graph {
         mgr.world().resources.push(ResourceData {
             location: GraphVertexIndex(idx),
             class: ResourceClass::Network(NetworkData {
@@ -917,10 +931,11 @@ fn main() {
     }
 
     mgr.register_observer(1, &observe);
-    mgr.run(10000);
+    mgr.register_observer(1, &check_exit_conditions_and_print_results_to_file);
+    mgr.run(4000, "/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/results/experiment_results.txt");
 }
 
-fn observe(step: usize, world: &WorldData, _pop: &SimulationPopulation<Simulator>) {
+fn observe(step: usize, world: &WorldData, _pop: &SimulationPopulation<Simulator>, _end_simulation_flag: &mut bool, _file_path: &str) {
     println!(
         "[{}] --------------------------------------------------------------------",
         step
@@ -948,4 +963,60 @@ fn observe(step: usize, world: &WorldData, _pop: &SimulationPopulation<Simulator
         .count();
     println!("[{}] consumers: {} merchants: {}", step, num_con, num_mer);
     */
+}
+
+
+fn check_exit_conditions_and_print_results_to_file(
+    step: usize, 
+    world: &WorldData, 
+    _pop: &SimulationPopulation<Simulator>,
+    end_simulation_flag: &mut bool, 
+    file_path: &str
+) {
+    if (world.statistics.double_spenders_total == world.statistics.double_spenders_revoked_total) {
+        *end_simulation_flag = true;
+        // time to exit; write important information about the experiment to the file, and flag that we need to move on (???)
+        // need to pass a flag inside for "exiting" the simulation for current parameters I suppose...
+        let mut file = match File::create(file_path) {
+            Ok(handle) => handle,
+            Err(e) => panic!("{}", e),
+        };
+        
+        // How many simulation steps have passed since initial double-spending fork?
+        for &item in &world.statistics.double_spent_life_measurements {
+            match write!(file, "{} ", item) {
+                Ok(_) => (),
+                Err(e) => panic!("{}", e) 
+            }
+        }
+        match writeln!(file) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        };
+
+        // How many transactions have passed since initial double-spending fork?
+        for &item in &world.statistics.double_spent_txs_measurements {
+            match write!(file, "{} ", item) {
+                Ok(_) => (),
+                Err(e) => panic!("{}", e) 
+            }
+        }
+        match writeln!(file) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        };
+
+        // Step when all cheaters have been caught
+        match writeln!(file, "{}", step) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        };
+
+        
+
+
+
+        println!("Wrote stats to the file!");
+        
+    }
 }

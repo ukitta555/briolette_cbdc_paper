@@ -64,8 +64,8 @@ impl<S: Simulation + 'static> SimulationClient<S> for LocalSimulationClient<S> {
                 h.join();
             }
         }
-    queue.append(&mut self.queue.write().unwrap());
-    self.queue.write().unwrap().clear();
+        queue.append(&mut self.queue.write().unwrap());
+        self.queue.write().unwrap().clear();
     }
 }
 
