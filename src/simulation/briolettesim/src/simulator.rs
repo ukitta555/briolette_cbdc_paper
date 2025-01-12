@@ -869,11 +869,42 @@ impl Simulation for Simulator {
                     for coin in &vdata.coins {
                         if world.coin_map.contains_key(&coin.id) {
                             let known_coin_state = world.coin_map.get_mut(&coin.id).unwrap();
-                            // If we already know this coin is bad, just collect the stats and move on.
+                            // If we already know this coin is bad, just collect the stats and move on - still have to compute the LCA though.
                             if let Some(step) = known_coin_state.revoked {
                                 bad_coins.push(coin.id);
+
+                                let known_coin = &known_coin_state.coin;
+                                // Now we see if the history is shorter or forked.
+                                // If the coin coming in has a shorter history, it's a fork.
+                                // If the history matches, then we can update.
+                                let mut ds_entry = None;
+                                if coin.history.len() < known_coin.history.len() {
+                                    assert!(coin.history[0] == known_coin.history[0]);
+                                    assert!(coin.history.len() == coin.tx_history.len());
+                                    for entry in 1..coin.history.len() {
+                                        if coin.history[entry] != known_coin.history[entry]
+                                            || coin.tx_history[entry] != known_coin.tx_history[entry]
+                                        {
+                                            ds_entry = Some(entry - 1);
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    assert!(coin.history[0] == known_coin.history[0]);
+                                    assert!(coin.history.len() == coin.tx_history.len());
+                                    for entry in 1..known_coin.history.len() {
+                                        if coin.history[entry] != known_coin.history[entry]
+                                            || coin.tx_history[entry] != known_coin.tx_history[entry]
+                                        {
+                                            ds_entry = Some(entry - 1);
+                                            break;
+                                        }
+                                    }
+                                }
+
+
                                 // For this, we have to compute the difference between the fork point and the history.
-                                if let Some(txn_fork) = known_coin_state.fork_txn { // txn_fork == index in tx history where things start to diverge
+                                if let Some(txn_fork) = ds_entry { // txn_fork == index in tx history where things start to diverge
                                     // If a double spent coin is validated against the last known good history, then it shows up here because its
                                     // been revoked even though it will not have a txn_fork entry to consume.  We will push a 0 for that instead since
                                     // that is the reserved tx_history for minting.
