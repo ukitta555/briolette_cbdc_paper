@@ -10,6 +10,7 @@ use absim::{
     WorldView,
 };
 
+use crate::EpochSampleStats;
 use crate::{AgentData, AgentRole, BankData, Coin, CoinState, EventData, GossipData, MerchantData, PopulationDel, RegisterData, RequestRole, RequestTransactionData, ResourceData, SimulationTools, SimulatorHelpers, Statistics, SyncState, SynchronizeData, TransactData, TransactionCoin, ValidateData, ValidateResponseData, ViewData, WorldData};
 
 
@@ -200,14 +201,14 @@ impl Simulation for Simulator {
     fn worldview(
         &self,
         id: usize,
-        population: &Self::SimulationPopulation,
+        population: Arc<RwLock<Self::SimulationPopulation>>,
         world: &Self::World
     ) -> Option<WorldView<Self>> {
         if id >= world.graph.vertices.len() {
             return None;
         }
         let location = world.graph.get_location(id);
-        let cell = world.graph.at_location(&GraphVertexIndex(location.clone()));
+        let cell = world.graph.at_location(&GraphVertexIndex(location));
         /*
         println!(
             "Generating cellular World View: ({}, {})",
@@ -218,11 +219,7 @@ impl Simulation for Simulator {
         let mut pop = Box::new(SimulationPopulation::new());
         for id in &cell.agents {
             // Keep same ids
-            pop.update(&population.get(id.clone()).unwrap().clone());
-        }
-        let mut resource = ResourceData::default();
-        if cell.resources.len() > 0 {
-            resource = world.resources[cell.resources[0]].clone();
+            pop.update(&population.read().unwrap().get(*id).unwrap());
         }
         // TODO: Don't copy all epochs over time, but still more efficient than putting it in each
         // agent.
@@ -231,8 +228,9 @@ impl Simulation for Simulator {
             ViewData {
                 id: id,
                 step: world.step,
+                deposit_limit: world.deposit_limit,
+                tickets_to_give_for_refill: world.ticket_refill,
                 bounds: world.graph_size,
-                resource: resource,
                 epoch: world.epoch,
                 epochs: world.epochs.clone(),
                 graph: world.graph.clone()
@@ -347,12 +345,19 @@ impl Simulation for Simulator {
                         Address::AgentId(agent.id),
                         Address::AgentId(data.bank),
                         EventData::RequestTransaction(RequestTransactionData {
-                            amount: min(data.account_balance, 5),
+                            amount: min(data.account_balance, view.data().deposit_limit),
                             epoch: agent.data.epoch,
                             role: RequestRole::Consumer,
                             source_location: agent.data.location
                         }),
                     );
+
+                    queue.enqueue(
+                        Address::AgentId(agent.id),
+                        Address::World,
+                        EventData::Synchronize(SynchronizeData {}),
+                    );
+
                     // println!("[Agent {}] My bank is {} and my coins are {} and my balance is {}", agent.id, data.bank, agent.data.coins.len(), data.account_balance);
                     count += 1;
                 }
@@ -538,6 +543,8 @@ impl Simulation for Simulator {
                         .collect::<Vec<Coin>>();
                     // Keep track so we can stop early since we always takes from the tail.
                     let mut index = agent.data.coins.len();
+                    
+                    // println!("Removals before {:?}", removals);
                     while removals.len() > 0 {
                         index -= 1;
                         let coin = &agent.data.coins[index];
@@ -546,6 +553,7 @@ impl Simulation for Simulator {
                         // like a double spender.
                         if let Some(r) = removals.iter().position(|c| {
                             coin.id == c.id
+                                && coin.tx_history.len() >= c.tx_history.len() - 1
                                 && coin.tx_history[..(c.tx_history.len() - 1)]
                                     == c.tx_history[..(c.tx_history.len() - 1)]
                         }) {
@@ -558,6 +566,9 @@ impl Simulation for Simulator {
                         }
                     }
                     // println!("{}", removals.len());
+                    // if removals.len() != 0 {
+                    //     println!("Removals bugged {:?}", removals);
+                    // }
                     assert!(removals.len() == 0);
                 }
             }
@@ -580,10 +591,10 @@ impl Simulation for Simulator {
                                 {
                                     data.holding.swap_remove(index);
                                     lists.counterfeit.swap_remove(position);
-                                    println!(
-                                        "[agent {}] bank destroying bad coin {}",
-                                        agent.id, id
-                                    );
+                                    // println!(
+                                    //     "[agent {}] bank destroying bad coin {}",
+                                    //     agent.id, id
+                                    // );
                                 } else if let Some(position) =
                                     lists.ok.iter().position(|c| *c == id)
                                 {
@@ -622,8 +633,9 @@ impl Simulation for Simulator {
                                     let view_data = ViewData {
                                         id: 0,
                                         step: world.step,
+                                        deposit_limit: world.deposit_limit,
+                                        tickets_to_give_for_refill: world.ticket_refill,
                                         bounds: world.graph_size,
-                                        resource: ResourceData::default(),
                                         epoch: world.epoch,
                                         epochs: world.epochs.clone(),
                                         graph: world.graph.clone()
@@ -653,9 +665,6 @@ impl Simulation for Simulator {
                                         e.id = world.step;
                                     }
                                 }
-                            // } else {
-                            //     println!("Agent isn't in the same node as the bank of interest!");
-                            // }
                         }
                     }
                     EventData::Transact(txn) => {
@@ -707,9 +716,9 @@ impl Simulation for Simulator {
                         // linked-sig.
                         // TODO: Discuss this more deeply.
                         // TODO: Swap with a GrantTickets event if world mutation is needed.
-                        if data.wids < 8 {
+                        if data.wids < world.ticket_refill {
                             // TODO: Operator determined.
-                            data.wids = 8;
+                            data.wids = world.ticket_refill;
                         }
                     }
                     EventData::RequestTransaction(rt_data) => {
@@ -802,7 +811,7 @@ impl Simulation for Simulator {
 
     fn world_generate(
         &self,
-        _population: &Self::SimulationPopulation,
+        _population: Arc<RwLock<Self::SimulationPopulation>>,
         world: &Self::World,
         queue: &mut EventQueue<Self>,
     ) -> usize {
@@ -827,7 +836,7 @@ impl Simulation for Simulator {
     fn world_apply(
         &self,
         world: &mut Self::World,
-        population: &Self::SimulationPopulation,
+        population: Arc<RwLock<Self::SimulationPopulation>>,
         events: &Vec<Event<Self::Event>>,
     ) {
         // Unlike agents, world_apply is called once per-tick.
@@ -839,7 +848,7 @@ impl Simulation for Simulator {
         //println!("Applying world events: {:?}", events);
         world.graph.reset();
         // Update world view
-        for agent in population.agents.values() {
+        for agent in population.read().unwrap().agents.values() {
             world
                 .graph
                 .at_location_mut(&mut agent.data.location.clone())
@@ -938,10 +947,10 @@ impl Simulation for Simulator {
                                     }
 
                                     assert!(txn_fork <= coin.history.len());
-                                    println!(
-                                        "[operator] recovered double spend of coin {} (forked by Agent {}) after {} txns and {} steps",
-                                        coin.id, coin.history[txn_fork], coin.history.len() - txn_fork, world.step - step
-                                    );
+                                    // println!(
+                                    //     "[operator] recovered double spend of coin {} (forked by Agent {}) after {} txns and {} steps",
+                                    //     coin.id, coin.history[txn_fork], coin.history.len() - txn_fork, world.step - step
+                                    // );
                                 }
                                 // in steps, not transfers. Transfers we can get from the history.
                                 world.statistics.double_spent_longest_life = max(
@@ -998,8 +1007,8 @@ impl Simulation for Simulator {
                                         "[operator] double spending by agent {} detected. Revoking . . .",
                                         ds_agent
                                     );
-                                    println!("Coin: {:?}", coin);
-                                    println!("Known coin: {:?}", known_coin);
+                                    // println!("Coin: {:?}", coin);
+                                    // println!("Known coin: {:?}", known_coin);
                                     let last_step = world.epochs[world.epoch].step;
                                     let last_revocation =
                                         world.epochs[world.epoch].revocation.clone();
@@ -1034,10 +1043,10 @@ impl Simulation for Simulator {
                                 // Start from the first transfer
                                 let survived_steps =
                                     world.step - coin.step_history[ds_entry.unwrap() + 1];
-                                println!(
-                                    "[operator] recovered double spend of coin {} after {} txns and {} steps",
-                                    coin.id, survived_txns, survived_steps,
-                                );
+                                // println!(
+                                //     "[operator] recovered double spend of coin {} after {} txns and {} steps",
+                                //     coin.id, survived_txns, survived_steps,
+                                // );
                                 /*
                                     println!("New {:?}", coin.history);
                                     println!("New {:?}", coin.tx_history);
@@ -1072,11 +1081,71 @@ impl Simulation for Simulator {
                 _ => todo!(),
             }
         }
+
+        
+        let mut total_sum_global_diffs = 0;
+        let mut total_sum_global_diffs_squared: f64 = 0.0;
+        let mut total_sum_intra_diffs_squared: f64 = 0.0;
+        let mut total_sum_intra = 0; 
+        let mut max_diff_global = 0;
+
+        
+        let pop = population.read().unwrap();
+        let non_double_spenders = pop.agents.values()
+            .into_iter()
+            .filter(|agent| {
+                if let AgentRole::Consumer(ref consumer_data) = agent.data.role {
+                    consumer_data.double_spend_probability == 0.0
+                } else {
+                    false
+                }
+            })
+            .collect::<Vec<&Agent<AgentData>>>();
+
+
+
+        for agent in &non_double_spenders {
+            total_sum_global_diffs += (world.epoch - agent.data.epoch);
+
+            max_diff_global = max(world.epoch - agent.data.epoch, max_diff_global);  
+            total_sum_intra += agent.data.epoch;
+        }
+        
+
+        let mean = (total_sum_global_diffs as f64) / (non_double_spenders.len() as f64);
+        let mean_intra = (total_sum_intra as f64) / (non_double_spenders.len() as f64);
+
+
+        for agent in &non_double_spenders {
+            total_sum_global_diffs_squared += ((world.epoch - agent.data.epoch) as f64 - mean).powf(2.0);
+            total_sum_intra_diffs_squared += (agent.data.epoch as f64 - mean_intra).powf(2.0);
+        }
+
+        let mut standard_deviation = (total_sum_global_diffs_squared / ((non_double_spenders.len() - 1) as f64)).sqrt();
+        
+        world.statistics.global_to_local_epoch_diffs.push(
+            EpochSampleStats {
+                mean,
+                standard_deviation,
+                max_diff: max_diff_global
+            }
+        );
+
+        standard_deviation = (total_sum_intra_diffs_squared / ((non_double_spenders.len() - 1) as f64)).sqrt();
+        world.statistics.std_local_epoch_diffs.push(standard_deviation);
+        
+        world.statistics.ratio_of_double_spenders_caught.push(world.statistics.double_spenders_revoked_total as f64 / world.statistics.total_people as f64);
+        world.statistics.ratios_of_double_spent_coins.push(world.statistics.coins_double_spent_total as f64 / world.statistics.coins_total as f64);
+        
+        if world.statistics.caught_ratios_epsilon_stop.len() >= 25 {
+            world.statistics.caught_ratios_epsilon_stop.remove(0);
+        }
+        world.statistics.caught_ratios_epsilon_stop.push(world.statistics.double_spenders_revoked_total as f64 / world.statistics.total_people as f64);
     }
 
     fn population_apply(
         &self,
-        population: &mut Self::SimulationPopulation,
+        population: Arc<RwLock<Self::SimulationPopulation>>,
         _world: &Self::World,
         events: &Vec<Event<Self::Event>>,
     ) {
@@ -1086,13 +1155,13 @@ impl Simulation for Simulator {
             match &event.data {
                 EventData::Arrive(add_data) => {
                     // TODO: loglevels println!("Adding {} agents and resources", add_data.count);
-                    population.new_agents(&add_data.data, add_data.count);
+                    population.write().unwrap().new_agents(&add_data.data, add_data.count);
                 }
                 // TODO clean up Depart
                 EventData::Depart(del_data) => {
                     for id in &del_data.ids {
                         println!("[agent {}] is departing", id);
-                        population.remove(id);
+                        population.write().unwrap().remove(id);
                     }
                 }
                 _ => {}
