@@ -46,15 +46,20 @@ impl<S: Simulation + 'static> SimulationClient<S> for LocalSimulationClient<S> {
        // The simulator clone must handle this.
         let simulator = self.simulator.clone();
         let queue = self.queue.clone();
-        self.handles.push(thread::spawn(move||{
-        simulator.view_generate(&thread_view, &mut queue.write().unwrap());
-        //  println!("[{}] view::generate added events [world queue: {}]", step, queue.read().unwrap().world.len());
-        thread_view.population.for_each(&|agent|  {
+        let lambda = &|agent|  {
             simulator.generate(agent, &thread_view, &mut queue.write().unwrap());
-        });
-        // TODO log levels 
-        //println!("[{}] agent::generate added events [agent queue: {}]", step, queue.read().unwrap().agent.len());
-        }));
+        };
+        for agent in &*(thread_view.population) { 
+            lambda(agent.1); 
+        }
+        // self.handles.push(thread::spawn ( move|| {
+        //     simulator.view_generate(&thread_view, &mut queue.write().unwrap());
+        //     //  println!("[{}] view::generate added events [world queue: {}]", step, queue.read().unwrap().world.len());
+            
+
+        //     // TODO log levels 
+        //     //println!("[{}] agent::generate added events [agent queue: {}]", step, queue.read().unwrap().agent.len());
+        // }));
     }
     fn collect(&mut self, queue: &mut EventQueue<S>) {
         if self.handles.len() > 0 {

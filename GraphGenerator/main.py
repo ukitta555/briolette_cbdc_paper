@@ -4,14 +4,12 @@ import networkx
 if __name__ == "__main__":
     number_of_vertices = 64
 
-
     # G: networkx.Graph = networkx.barabasi_albert_graph(
     #     n=64, 
     #     m=12, 
     #     seed=42,
     #     initial_graph=None
     # )
-
 
     # number_of_connections_watts = 4
     for number_of_connections_watts in range(5, 16):

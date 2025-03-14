@@ -76,7 +76,6 @@ pub struct Event<ED: SimulationData> {
 }
 
 use std::fmt;
-use std::sync::{Arc, RwLock};
 
 #[derive(Debug)]
 pub enum PopulationError {
@@ -200,17 +199,17 @@ impl<S: Simulation> EventQueue<S> {
 }
 
 // Defines the WorldView any given agent will see when generating or applying.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct WorldView<S: Simulation> {
-    population: Box<S::ViewPopulation>,
+#[derive(Debug, Clone)]
+pub struct WorldView<'a, S: Simulation> {
+    population: Box<HashMap<usize, &'a Agent<S::Data>>>,
     data: S::View
 }
 
-impl<S: Simulation> WorldView<S> {
-    pub fn new(population: Box<S::ViewPopulation>, data: S::View) -> Self {
+impl<'a, S: Simulation> WorldView<'a, S> {
+    pub fn new(population: Box<HashMap<usize, &'a Agent<S::Data>>>, data: S::View) -> Self {
         Self { population, data }
     }
-    pub fn population(&self) -> &S::ViewPopulation {
+    pub fn population(&self) -> &HashMap<usize, &'a Agent<S::Data>> {
         &self.population
     }
     pub fn data(&self) -> &S::View {
@@ -232,12 +231,12 @@ pub trait Simulation: Sized + Send + Sync + Clone {
     type ViewPopulation: Population<Self>; // TODO: move to struct with .iter
 
     // Based on an incrementing id, emit a WorldView or None.
-    fn worldview(
+    fn worldview<'a>(
         &self,
         _id: usize,
-        _population: Arc<RwLock<Self::SimulationPopulation>>,
+        _population: &'a Self::SimulationPopulation,
         _world: &Self::World,
-    ) -> Option<WorldView<Self>> {
+    ) -> Option<WorldView<'a, Self>> {
         None
     }
 
@@ -265,7 +264,7 @@ pub trait Simulation: Sized + Send + Sync + Clone {
 
     fn world_generate(
         &self,
-        _population: Arc<RwLock<Self::SimulationPopulation>>,
+        _population: &Self::SimulationPopulation,
         _world: &Self::World,
         _queue: &mut EventQueue<Self>,
     ) -> usize {
@@ -274,13 +273,13 @@ pub trait Simulation: Sized + Send + Sync + Clone {
     fn world_apply(
         &self,
         _world: &mut Self::World,
-        _population: Arc<RwLock<Self::SimulationPopulation>>,
+        _population: &Self::SimulationPopulation,
         _events: &Vec<Event<Self::Event>>,
     ) {
     }
     fn population_apply(
         &self,
-        _population: Arc<RwLock<Self::SimulationPopulation>>,
+        _population: &mut Self::SimulationPopulation,
         _world: &Self::World,
         _events: &Vec<Event<Self::Event>>,
     ) {
@@ -296,11 +295,11 @@ pub trait SimulationClient<S: Simulation>: Send {
 
 // Fn(n_steps,&
 pub trait ManagerObserver<S: Simulation>:
-    Fn(usize, &S::World, Arc<RwLock<S::SimulationPopulation>>, &mut bool, &str) -> () + Send + 'static
+    Fn(usize, &S::World, &S::SimulationPopulation, &mut bool, &str) -> () + Send + 'static
 {
 }
 impl<S: Simulation, T> ManagerObserver<S> for T where
-    T: Fn(usize, &S::World, Arc<RwLock<S::SimulationPopulation>>, &mut bool, &str) -> () + Send + 'static
+    T: Fn(usize, &S::World, &S::SimulationPopulation, &mut bool, &str) -> () + Send + 'static
 {
 }
 
@@ -327,7 +326,7 @@ pub trait ManagerInterface<S: Simulation> {
 }
 
 pub struct Manager<S: Simulation> {
-    population: Arc<RwLock<S::SimulationPopulation>>,
+    population: S::SimulationPopulation,
     simulator: S,
     world: S::World,
     clients: Vec<Box<dyn SimulationClient<S>>>,
@@ -387,7 +386,7 @@ impl<S: Simulation> ManagerInterface<S> for Manager<S> {
 
             while let Some(view) = self
                 .simulator
-                .worldview(vertex_idx, self.population.clone(), &self.world)
+                .worldview(vertex_idx, &self.population, &self.world)
             {
                 // Farm out regions to client
                 // This MUST be deterministic or it breaks replay.
@@ -401,21 +400,21 @@ impl<S: Simulation> ManagerInterface<S> for Manager<S> {
             }
             // Add any new world events.
             self.simulator
-                .world_generate(self.population.clone(), &self.world, &mut queue);
+                .world_generate(&self.population, &self.world, &mut queue);
             // Now per-agent distribution.
             // Agents are called multiple times per-tick. We could solve that
             // with a hashmap, but a Tick() event would work well and allow flexible scheduling.
             for eid in 0..queue.agent.len() {
                 let event = &queue.agent[eid];
                 if let Address::AgentId(src_id) = event.source {
-                    if let Ok(agent) = self.population.write().unwrap().get_mut(src_id) {
+                    if let Ok(agent) = self.population.get_mut(src_id) {
                         self.simulator.apply(agent, &self.world, &event);
                     } else {
                         eprintln!("Invalid agent requested: {}", src_id);
                     }
                 }
                 if let Address::AgentId(tgt_id) = event.target {
-                    if let Ok(agent) = self.population.write().unwrap().get_mut(tgt_id) {
+                    if let Ok(agent) = self.population.get_mut(tgt_id) {
                         self.simulator.apply(agent, &self.world, &event);
                     } else {
                         eprintln!("Invalid agent requested: {}", tgt_id);
@@ -425,7 +424,7 @@ impl<S: Simulation> ManagerInterface<S> for Manager<S> {
 
             // Process any population events
             self.simulator.population_apply(
-                self.population.clone(),
+                &mut self.population,
                 &self.world,
                 &mut queue.population,
             );
@@ -433,14 +432,14 @@ impl<S: Simulation> ManagerInterface<S> for Manager<S> {
             // We should now have a queue full of events for this step.
             // World applies last to allow location updates, etc.
             self.simulator
-                .world_apply(&mut self.world, self.population.clone(), &queue.world);
+                .world_apply(&mut self.world, &self.population, &queue.world);
             
             // Clear for the next step.
             queue.clear();
             for observer in &self.observers {
                 if s % observer.steps == 0 {
                     let cb = &observer.cb;
-                    cb(s, &self.world, self.population.clone(), &mut end_simulation_flag, experiment_result_filepath);
+                    cb(s, &self.world, &self.population, &mut end_simulation_flag, experiment_result_filepath);
                 }
             }
         }
@@ -457,7 +456,7 @@ impl<S: Simulation> ManagerInterface<S> for Manager<S> {
 }
 
 impl<S: Simulation> Manager<S> {
-    pub fn new(simulator: S, population: Arc<RwLock<S::SimulationPopulation>>, world: S::World) -> Self {
+    pub fn new(simulator: S, population: S::SimulationPopulation, world: S::World) -> Self {
         Self {
             population,
             simulator,

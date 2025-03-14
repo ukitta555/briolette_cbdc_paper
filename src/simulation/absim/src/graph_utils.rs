@@ -56,14 +56,14 @@ impl SimulationGraph {
             graph.push(neighbours);
         }
     
-        for (idx, node_neighbours) in (&graph).into_iter().enumerate() {
-            print!("Node #{idx} neighbours: ");
+        // for (idx, node_neighbours) in (&graph).into_iter().enumerate() {
+        //     print!("Node #{idx} neighbours: ");
     
-            for neighbour in node_neighbours {
-                print!("{neighbour} ");
-            }   
-            println!();
-        }
+        //     for neighbour in node_neighbours {
+        //         print!("{neighbour} ");
+        //     }   
+        //     println!();
+        // }
     
         let mut vertices = Vec::new();
         for idx in 0..graph.len() {

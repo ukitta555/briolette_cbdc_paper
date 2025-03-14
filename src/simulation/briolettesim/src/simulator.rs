@@ -2,6 +2,7 @@ use absim::graph_utils::GraphVertexIndex;
 use rand::prelude::*;
 use rand::SeedableRng;
 use std::cmp::{max, min};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use absim::extras::SimulationPopulation;
@@ -198,12 +199,12 @@ impl Simulation for Simulator {
     type SimulationPopulation = SimulationPopulation<Self>;
     type ViewPopulation = SimulationPopulation<Self>;
 
-    fn worldview(
+    fn worldview<'a>(
         &self,
         id: usize,
-        population: Arc<RwLock<Self::SimulationPopulation>>,
+        population: &'a Self::SimulationPopulation,
         world: &Self::World
-    ) -> Option<WorldView<Self>> {
+    ) -> Option<WorldView<'a, Self>> {
         if id >= world.graph.vertices.len() {
             return None;
         }
@@ -216,10 +217,13 @@ impl Simulation for Simulator {
         );
         */
         // Create our own population copy.
-        let mut pop = Box::new(SimulationPopulation::new());
+        // let x = SimulationPopulation::new();
+        let mut pop: Box<HashMap<usize, &Agent<AgentData>>> = Box::new(HashMap::new());
         for id in &cell.agents {
             // Keep same ids
-            pop.update(&population.read().unwrap().get(*id).unwrap());
+            let agent = &population.get(*id).unwrap();
+            let id = agent.id;
+            pop.insert(id, agent);
         }
         // TODO: Don't copy all epochs over time, but still more efficient than putting it in each
         // agent.
@@ -370,7 +374,7 @@ impl Simulation for Simulator {
                 if agent.data.registered && agent.data.coins.len() > 0 && data.wids > 0 { 
                     let mut peer = None;
                     if helper.probability_check(&data.p2m_distribution, data.p2m_probability) {
-                        let merchant_iter = view.population().agents.iter().filter(|entry| {
+                        let merchant_iter = view.population().iter().filter(|entry| {
                             match &entry.1.data.role {
                                 AgentRole::Merchant(_) => {
                                     // println!("{:?}, {:?}", entry.1.data.location, agent.data.location);
@@ -384,12 +388,12 @@ impl Simulation for Simulator {
                         });
                         if let Some(merchant_entry) = merchant_iter.choose(&mut helper.rng) {
                             // println!("Picked a merchant to transact with! {}", merchant_entry.0);
-                            peer = view.population().agents.get(merchant_entry.0);
+                            peer = view.population().get(merchant_entry.0);
                         }
                     } else if helper.probability_check(&data.p2p_distribution, data.p2p_probability)
                     {
                         let peer_iter =
-                            view.population().agents.iter().filter(|entry| {
+                            view.population().iter().filter(|entry| {
                                 match entry.1.data.role {
                                     AgentRole::Consumer(_) => {
                                         // println!("{:?}, {:?}", entry.1.data.location, agent.data.location);
@@ -403,7 +407,7 @@ impl Simulation for Simulator {
                             });
                         if let Some(peer_entry) = peer_iter.choose(&mut helper.rng) {
                             // println!("Picked a peer to transact with! {}", peer_entry.0);
-                            peer = view.population().agents.get(peer_entry.0);
+                            peer = view.population().get(peer_entry.0);
                         }
                     }
                     if let Some(receiver) = peer {
@@ -811,7 +815,7 @@ impl Simulation for Simulator {
 
     fn world_generate(
         &self,
-        _population: Arc<RwLock<Self::SimulationPopulation>>,
+        _population: &Self::SimulationPopulation,
         world: &Self::World,
         queue: &mut EventQueue<Self>,
     ) -> usize {
@@ -836,7 +840,7 @@ impl Simulation for Simulator {
     fn world_apply(
         &self,
         world: &mut Self::World,
-        population: Arc<RwLock<Self::SimulationPopulation>>,
+        population: &Self::SimulationPopulation,
         events: &Vec<Event<Self::Event>>,
     ) {
         // Unlike agents, world_apply is called once per-tick.
@@ -848,7 +852,7 @@ impl Simulation for Simulator {
         //println!("Applying world events: {:?}", events);
         world.graph.reset();
         // Update world view
-        for agent in population.read().unwrap().agents.values() {
+        for agent in population.agents.values() {
             world
                 .graph
                 .at_location_mut(&mut agent.data.location.clone())
@@ -1003,10 +1007,10 @@ impl Simulation for Simulator {
                                 // Create revocation sync data and update global state.
                                 if world.epochs[world.epoch].revocation.contains(&ds_agent) == false
                                 {
-                                    println!(
-                                        "[operator] double spending by agent {} detected. Revoking . . .",
-                                        ds_agent
-                                    );
+                                    // println!(
+                                    //     "[operator] double spending by agent {} detected. Revoking . . .",
+                                    //     ds_agent
+                                    // );
                                     // println!("Coin: {:?}", coin);
                                     // println!("Known coin: {:?}", known_coin);
                                     let last_step = world.epochs[world.epoch].step;
@@ -1090,8 +1094,7 @@ impl Simulation for Simulator {
         let mut max_diff_global = 0;
 
         
-        let pop = population.read().unwrap();
-        let non_double_spenders = pop.agents.values()
+        let non_double_spenders = population.agents.values()
             .into_iter()
             .filter(|agent| {
                 if let AgentRole::Consumer(ref consumer_data) = agent.data.role {
@@ -1145,7 +1148,7 @@ impl Simulation for Simulator {
 
     fn population_apply(
         &self,
-        population: Arc<RwLock<Self::SimulationPopulation>>,
+        population: &mut Self::SimulationPopulation,
         _world: &Self::World,
         events: &Vec<Event<Self::Event>>,
     ) {
@@ -1155,13 +1158,13 @@ impl Simulation for Simulator {
             match &event.data {
                 EventData::Arrive(add_data) => {
                     // TODO: loglevels println!("Adding {} agents and resources", add_data.count);
-                    population.write().unwrap().new_agents(&add_data.data, add_data.count);
+                    population.new_agents(&add_data.data, add_data.count);
                 }
                 // TODO clean up Depart
                 EventData::Depart(del_data) => {
                     for id in &del_data.ids {
-                        println!("[agent {}] is departing", id);
-                        population.write().unwrap().remove(id);
+                        // println!("[agent {}] is departing", id);
+                        population.remove(id);
                     }
                 }
                 _ => {}
