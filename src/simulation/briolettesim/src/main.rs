@@ -989,7 +989,7 @@ fn main() -> io::Result<()> {
     
 
 
-    let file = File::open("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/results/sobol_params.txt")?;
+    let file = File::open("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/results/sobol_params.txt")?;
     let reader = io::BufReader::new(file);    
     
     for (exp_param_idx, experiment_params) in reader.lines().enumerate() {
@@ -1003,8 +1003,10 @@ fn main() -> io::Result<()> {
                     .collect();
         
         if let [
-            ratio_double_spenders_to_honest,
-            random_sync_probability,
+            p2p_probability,
+            p2m_probability
+            // ratio_double_spenders_to_honest,
+            // random_sync_probability,
         ] = experiment_params.as_slice() {
             for _ in 0..repeat_experiment_number_of_times {
                 experiments
@@ -1012,14 +1014,14 @@ fn main() -> io::Result<()> {
                     .or_insert_with(Vec::new)
                     .push(
                         ExperimentConfig { // 2:1
-                            ratio_double_spenders_to_honest: *ratio_double_spenders_to_honest,
-                            random_sync_probability: *random_sync_probability,
+                            ratio_double_spenders_to_honest: 0.5,
+                            random_sync_probability: 0.01,
                             top_up_amount: 10,
                             merchants: 30, 
                             banks: 5,
-                            graph_file: format!("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/watts-strogatz-{}-connections.txt", 15),
-                            p2m_probability: 0.6, 
-                            p2p_probability: 0.2, 
+                            graph_file: format!("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/watts-strogatz-{}-connections.txt", 15),
+                            p2m_probability: *p2m_probability, 
+                            p2p_probability: *p2p_probability, 
                             move_probability: 0.2,   
                             merchant_sync_frequency: 8,
                             tickets_given_right_away: 8, 
@@ -1356,12 +1358,11 @@ fn main() -> io::Result<()> {
                         mgr.run(
                             4000, 
                             format!(
-                                "/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/results/sobol_results/rural/experiment_results_model_{:?}_ratio_{}_topup_{}_tickets_{}_config_{:?}_expid_{}.txt",
+                                "/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/results/sobol_results/rural/model_{:?}_p2p_{}_p2m_{}_expid_{}.txt",
+                                // "/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/results/sobol_results/rural/experiment_results_model_{:?}_ratio_{}_topup_{}_tickets_{}_config_{:?}_expid_{}.txt",
                                 experiment.model,
-                                num_consumers as f64 / (num_double_spenders * 2) as f64,
-                                experiment.top_up_amount,
-                                experiment.tickets_given_right_away,
-                                wc.param,
+                                experiment.p2p_probability,
+                                experiment.p2m_probability,
                                 experiment_id
                             ).as_str()
                         );
@@ -1598,6 +1599,19 @@ fn check_exit_conditions_and_print_results_to_file_avged_out(
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
         };
+
+         // mean/std/max for (global - local) epoch diffs
+         for item in &world.statistics.global_to_local_epoch_diffs {
+            match write!(file, "{} {} {}:", item.mean, item.standard_deviation, item.max_diff) {
+                Ok(_) => (),
+                Err(e) => panic!("{}", e) 
+            }; 
+        }
+        match writeln!(file) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        };
+
 
 
         println!("Wrote stats to the file!");

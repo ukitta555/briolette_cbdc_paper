@@ -33,14 +33,27 @@ def read_experiment_results_avg_out(file_path):
 
     ratios_of_double_spent_coins = []
     ratio_of_double_spenders_caught = []
+    global_to_local_epoch_diffs_mean = []
+    global_to_local_epoch_diffs_std = []
+    global_to_local_epoch_diffs_max = []
 
     for idx, line in enumerate(lines):
-        # Convert each line into array of floats
-        current_array = list(map(float, line.strip().split()))
-        if idx % 2 == 0:
+        if idx % 3 == 0:
+            # Convert line into array of floats
+            current_array = list(map(float, line.strip().split()))
             ratios_of_double_spent_coins.append(current_array)
-        else:
+        elif idx % 3 == 1:
+            # Convert line into array of floats
+            current_array = list(map(float, line.strip().split()))
             ratio_of_double_spenders_caught.append(current_array)
+        elif idx % 3 == 2:
+            # Convert line  into array of triplets
+            triplets = [tuple(map(float, triplet.split())) for triplet in line.strip().split(':')][:-1]
+            global_to_local_epoch_diffs_mean.append([triplet[0] for triplet in triplets])
+            global_to_local_epoch_diffs_std.append([triplet[1] for triplet in triplets])
+            global_to_local_epoch_diffs_max.append([triplet[2] for triplet in triplets])
+
 
     # print(ratios_of_double_spent_coins, ratio_of_double_spenders_caught)
-    return ratios_of_double_spent_coins, ratio_of_double_spenders_caught
+    return ratios_of_double_spent_coins, ratio_of_double_spenders_caught, global_to_local_epoch_diffs_mean, global_to_local_epoch_diffs_std, global_to_local_epoch_diffs_max
+
