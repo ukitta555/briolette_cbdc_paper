@@ -928,7 +928,7 @@ impl Simulation for Simulator {
                                             world.statistics.double_spent_most_txns,
                                             coin.history.len() - txn_fork,
                                         );
-                                        world.statistics.double_spent_txs_measurements.push(coin.history.len() - txn_fork);
+                                        world.statistics.double_spent_txs_measurements.push((world.step, coin.history.len() - txn_fork));
                                     } else {
                                         // To show we've now seen an untransferred bad coin.
                                         // TODO: Should we track if the double spender themselves checks in? Later, yes.
@@ -961,7 +961,7 @@ impl Simulation for Simulator {
                                     world.statistics.double_spent_longest_life,
                                     world.step - step,
                                 );
-                                world.statistics.double_spent_life_measurements.push(world.step - step);
+                                world.statistics.double_spent_life_measurements.push((world.step, world.step - step));
                                 continue;
                             }
                             let known_coin = &known_coin_state.coin;

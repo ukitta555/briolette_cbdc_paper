@@ -27,6 +27,9 @@ use utils::split_population;
 use std::collections::HashMap;
 use std::fs::{self};
 use std::io::Write;
+use clap::{Parser, Subcommand};
+use std::path::Path;
+use chrono::Local;
 
 use absim::clients::LocalSimulationClient;
 use absim::extras::SimulationPopulation;
@@ -38,6 +41,45 @@ use rand_distr::{Pareto, Uniform};
 use rand_flight::Flight;
 use std::collections::HashSet;
 
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+// cargo run -- predefined
+// cargo run -- sobol --params-file /path/to/sobol_params.txt --repeat 100 --population-size 1000
+#[derive(Subcommand)]
+enum Commands {
+    /// Run experiments with predefined configurations
+    Predefined,
+    /// Run experiments with Sobol parameter sampling
+    /// 
+    /// This command runs experiments using Sobol sequence sampling for parameter space exploration.
+    /// It reads parameter combinations from a file and runs multiple experiments with different
+    /// parameter values to analyze system behavior across a wide range of configurations.
+    /// 
+    /// The parameters file should contain space-separated values for:
+    /// - move_probability: Probability of agents moving between locations
+    /// - p2p_probability: Probability of peer-to-peer transactions
+    /// - p2m_probability: Probability of peer-to-merchant transactions
+    /// - ratio_double_spenders_to_honest: Ratio of malicious to honest agents
+    Sobol {
+        /// Path to the Sobol parameters file containing space-separated parameter values
+        #[arg(short, long)]
+        params_file: String,
+        
+        /// Number of times to repeat each experiment for statistical significance
+        #[arg(short, long, default_value_t = 100)]
+        repeat: usize,
+        
+        /// Total number of user agents in the simulation
+        #[arg(short = 's', long, default_value_t = 1000)]
+        population_size: usize,
+    },
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Coin {
@@ -131,9 +173,9 @@ pub struct Statistics {
     double_spent_most_txns: usize,
     validate_total: usize,
     #[serde(skip_serializing)]
-    double_spent_life_measurements: Vec<usize>,
+    double_spent_life_measurements: Vec<(usize, usize)>, // (epoch, life)
     #[serde(skip_serializing)]
-    double_spent_txs_measurements: Vec<usize>,
+    double_spent_txs_measurements: Vec<(usize, usize)>, // (epoch, txs)
     #[serde(skip_serializing)]
     global_to_local_epoch_diffs: Vec<EpochSampleStats>,
     #[serde(skip_serializing)]
@@ -668,6 +710,13 @@ impl Configuration {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ExperimentCategory {
+    ThreatLevel,
+    SyncParams,
+    Sobol,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExperimentConfig {
     ratio_double_spenders_to_honest: f64,
     top_up_amount: usize,
@@ -683,7 +732,8 @@ pub struct ExperimentConfig {
     tickets_lower_bound_to_sync: usize,
     account_balance: usize,
     model: Model,
-    graph_config: GraphConfig
+    graph_config: GraphConfig,
+    category: ExperimentCategory,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -695,7 +745,7 @@ enum Model {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct BarabasiConfig {
     size: usize,
-    param: f64
+    param: usize
 }
 
 
@@ -711,690 +761,780 @@ enum GraphConfig {
     Barabasi(BarabasiConfig),
 }
 
+fn create_experiment_directory(experiment_type: &str, population_size: u64) -> io::Result<String> {
+    let base_dir = match experiment_type {
+        "predefined" => "/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/results/predefined_experiments",
+        "sobol" => "/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/results/sobol_experiments",
+        _ => panic!("Invalid experiment type"),
+    };
+
+    // Create base directory if it doesn't exist
+    fs::create_dir_all(base_dir)?;
+
+    // Create a timestamped directory with population size
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let dir_name = format!("{}/experiment_{}_{}k_actors", base_dir, timestamp, population_size / 1000);
+    fs::create_dir_all(&dir_name)?;
+
+    // Create subdirectories for different model types
+    let urban_dir = format!("{}/urban", dir_name);
+    let rural_dir = format!("{}/rural", dir_name);
+    fs::create_dir_all(&urban_dir)?;
+    fs::create_dir_all(&rural_dir)?;
+
+    Ok(dir_name)
+}
 
 fn main() -> io::Result<()> {
-    let population_size = 1000;
-    let repeat_experiment_number_of_times = 100;
+    let cli = Cli::parse();
 
-    let mut experiments: HashMap<usize, Vec<ExperimentConfig>> = HashMap::new();
+    match cli.command {
+        Commands::Predefined => {
+            let population_size = 50000;
+            let repeat_experiment_number_of_times = 1;
+            let mut experiments: HashMap<usize, Vec<ExperimentConfig>> = HashMap::new();
+            let experiment_dir = create_experiment_directory("predefined", population_size as u64)?;
 
+            // Add your predefined experiments here
+            let predefined_experiments = vec![
+                ExperimentConfig { // 1:1
+                    ratio_double_spenders_to_honest: 1.0,
+                    top_up_amount: 10, 
+                    merchants: 30, 
+                    banks: 10,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/barabasi_albert_8_m.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.6, 
+                    move_probability: 0.2,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 8,
+                    tickets_given_right_away: 8,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Urban,
+                    graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                        size: 64, 
+                        param: 12,
+                    }),
+                    category: ExperimentCategory::ThreatLevel,
+                },
+                ExperimentConfig { // 2:1
+                    ratio_double_spenders_to_honest: 0.5,
+                    top_up_amount: 10,
+                    merchants: 30, 
+                    banks: 10,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/barabasi_albert_8_m.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.6, 
+                    move_probability: 0.2,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 8,
+                    tickets_given_right_away: 8,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Urban,
+                    graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                        size: 64, 
+                        param: 12,
+                    }),
+                    category: ExperimentCategory::ThreatLevel,
+                },
+                ExperimentConfig { // 4:1
+                    ratio_double_spenders_to_honest: 0.25,
+                    top_up_amount: 10, 
+                    merchants: 30, 
+                    banks: 10,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/barabasi_albert_8_m.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.6, 
+                    move_probability: 0.2,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 8,
+                    tickets_given_right_away: 8,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Urban,
+                    graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                        size: 64, 
+                        param: 12,
+                    }),
+                    category: ExperimentCategory::ThreatLevel,
+                },
+                ExperimentConfig { // 10:1
+                    ratio_double_spenders_to_honest: 0.1,
+                    top_up_amount: 10, 
+                    merchants: 30, 
+                    banks: 10,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/barabasi_albert_8_m.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.6, 
+                    move_probability: 0.2,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 8,
+                    tickets_given_right_away: 8,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Urban,
+                    graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                        size: 64, 
+                        param: 12,
+                    }),
+                    category: ExperimentCategory::ThreatLevel,
+                },
+                ExperimentConfig { // 2:1, big top-up, merchants sync every 24 hours, 50 tickets > slowest sync
+                    ratio_double_spenders_to_honest: 0.5,
+                    top_up_amount: 50, 
+                    merchants: 30, 
+                    banks: 10,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/barabasi_albert_8_m.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.5, 
+                    move_probability: 0.3,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 24,
+                    tickets_given_right_away: 50,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Urban,
+                    graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                        size: 64, 
+                        param: 12,
+                    }),
+                    category: ExperimentCategory::SyncParams,
+                },
+                ExperimentConfig { // 2:1, medium top-up, merchants sync every 12 hours, 20 tickets  > slower sync
+                    ratio_double_spenders_to_honest: 0.5,
+                    top_up_amount: 20, 
+                    merchants: 30, 
+                    banks: 10,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/barabasi_albert_8_m.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.5, 
+                    move_probability: 0.3,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 12,
+                    tickets_given_right_away: 20,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Urban,
+                    graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                        size: 64, 
+                        param: 12,
+                    }),
+                    category: ExperimentCategory::SyncParams,
+                },
+                ExperimentConfig { // 2:1, small top-up, merchants sync every 8 hours, 8 tickets > quick sync 
+                    ratio_double_spenders_to_honest: 0.5,
+                    top_up_amount: 5, 
+                    merchants: 30, 
+                    banks: 10,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/barabasi_albert_8_m.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.5, 
+                    move_probability: 0.3,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 8,
+                    tickets_given_right_away: 8,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Urban,
+                    graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                        size: 64, 
+                        param: 12,
+                    }),
+                    category: ExperimentCategory::SyncParams,
+                },
+                // RURAL SCENARIO STARTS HERE
+                ExperimentConfig { // 1:1
+                    ratio_double_spenders_to_honest: 1.0,
+                    top_up_amount: 10, 
+                    merchants: 30, 
+                    banks: 5,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/watts-strogatz-5-connections.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.6, 
+                    move_probability: 0.2,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 8,
+                    tickets_given_right_away: 8,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Rural,
+                    graph_config: GraphConfig::Watts(WattsConfig {
+                        size: 64, 
+                        param: 15,
+                    }),
+                    category: ExperimentCategory::ThreatLevel,
+                },
+                ExperimentConfig { // 2:1
+                    ratio_double_spenders_to_honest: 0.5,
+                    top_up_amount: 10,
+                    merchants: 30, 
+                    banks: 5,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/watts-strogatz-5-connections.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.6, 
+                    move_probability: 0.2,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 8,
+                    tickets_given_right_away: 8,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Rural,
+                    graph_config: GraphConfig::Watts(WattsConfig {
+                        size: 64, 
+                        param: 15,
+                    }),
+                    category: ExperimentCategory::ThreatLevel,
+                },
+                ExperimentConfig { // 4:1
+                    ratio_double_spenders_to_honest: 0.25,
+                    top_up_amount: 10, 
+                    merchants: 30, 
+                    banks: 5,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/watts-strogatz-5-connections.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.6, 
+                    move_probability: 0.2,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 8,
+                    tickets_given_right_away: 8,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Rural,
+                    graph_config: GraphConfig::Watts(WattsConfig {
+                        size: 64, 
+                        param: 15,
+                    }),
+                    category: ExperimentCategory::ThreatLevel,
+                },
+                ExperimentConfig { // 10:1
+                    ratio_double_spenders_to_honest: 0.1,
+                    top_up_amount: 10, 
+                    merchants: 30, 
+                    banks: 5,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/watts-strogatz-5-connections.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.6, 
+                    move_probability: 0.2,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 8,
+                    tickets_given_right_away: 8,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Rural,
+                    graph_config: GraphConfig::Watts(WattsConfig {
+                        size: 64, 
+                        param: 15,
+                    }),
+                    category: ExperimentCategory::ThreatLevel,
+                },
+                ExperimentConfig { // 2:1, big top-up, merchants sync every 24 hours, 50 tickets > slowest sync
+                    ratio_double_spenders_to_honest: 0.5,
+                    top_up_amount: 50, 
+                    merchants: 30, 
+                    banks: 5,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/watts-strogatz-5-connections.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.6, 
+                    move_probability: 0.2,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 24,
+                    tickets_given_right_away: 50,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Rural,
+                    graph_config: GraphConfig::Watts(WattsConfig {
+                        size: 64, 
+                        param: 15,
+                    }),
+                    category: ExperimentCategory::SyncParams,
+                },
+                ExperimentConfig { // 2:1, medium top-up, merchants sync every 12 hours, 20 tickets  > slower sync
+                    ratio_double_spenders_to_honest: 0.5,
+                    top_up_amount: 20, 
+                    merchants: 30, 
+                    banks: 5,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/watts-strogatz-5-connections.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.6, 
+                    move_probability: 0.2,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 12,
+                    tickets_given_right_away: 20,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Rural,
+                    graph_config: GraphConfig::Watts(WattsConfig {
+                        size: 64, 
+                        param: 15,
+                    }),
+                    category: ExperimentCategory::SyncParams,
+                },
+                ExperimentConfig { // 2:1, small top-up, merchants sync every 8 hours, 8 tickets > quick sync 
+                    ratio_double_spenders_to_honest: 0.5,
+                    top_up_amount: 5, 
+                    merchants: 30, 
+                    banks: 5,
+                    graph_file: String::from("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/watts-strogatz-5-connections.txt"),
+                    p2m_probability: 0.2, 
+                    p2p_probability: 0.6, 
+                    move_probability: 0.2,  
+                    random_sync_probability: 0.01,  
+                    merchant_sync_frequency: 8,
+                    tickets_given_right_away: 8,
+                    tickets_lower_bound_to_sync: 2,
+                    account_balance: 500,
+                    model: Model::Rural,
+                    graph_config: GraphConfig::Watts(WattsConfig {
+                        size: 64, 
+                        param: 15,
+                    }),
+                    category: ExperimentCategory::SyncParams,
+                },
+            ];
 
-    // vec![
-        // ExperimentConfig { // 1:1
-        //     honest: 750,
-        //     double_spenders: 375,
-        //     top_up_amount: 15, 
-        //     merchants: 30, 
-        //     banks: 10,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/barabasi_albert_test.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.5, 
-        //     move_probability: 0.3,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 8,
-        //     tickets_given_right_away: 8,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 500,
-        //     model: Model::Urban
-        // },
-        // ExperimentConfig { // 2:1
-        //     honest: 1000,
-        //     double_spenders: 250,
-        //     top_up_amount: 15,
-        //     merchants: 30, 
-        //     banks: 10,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/barabasi_albert_test.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.5, 
-        //     move_probability: 0.3,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 8,
-        //     tickets_given_right_away: 8,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 500,
-        //     model: Model::Urban
-        // },
-        // ExperimentConfig { // 4:1
-        //     honest: 1200,
-        //     double_spenders: 150,
-        //     top_up_amount: 15, 
-        //     merchants: 30, 
-        //     banks: 10,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/barabasi_albert_test.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.5, 
-        //     move_probability: 0.3,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 8,
-        //     tickets_given_right_away: 8,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 500,
-        //     model: Model::Urban
-        // },
-        // ExperimentConfig { // 10:1
-        //     honest: 1363,
-        //     double_spenders: 68,
-        //     top_up_amount: 15, 
-        //     merchants: 30, 
-        //     banks: 10,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/barabasi_albert_test.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.5, 
-        //     move_probability: 0.3,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 8,
-        //     tickets_given_right_away: 8,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 500,
-        //     model: Model::Urban
-        // },
-        // ExperimentConfig { // 2:1, big top-up, merchants sync every 24 hours, 50 tickets > slowest sync
-        //     honest: 1000,
-        //     double_spenders: 250,
-        //     top_up_amount: 50, 
-        //     merchants: 30, 
-        //     banks: 10,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/barabasi_albert_test.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.5, 
-        //     move_probability: 0.3,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 24,
-        //     tickets_given_right_away: 50,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 1000,
-        //     model: Model::Urban
-        // },
-        // ExperimentConfig { // 2:1, medium top-up, merchants sync every 12 hours, 20 tickets  > slower sync
-        //     honest: 1000,
-        //     double_spenders: 250,
-        //     top_up_amount: 20, 
-        //     merchants: 30, 
-        //     banks: 10,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/barabasi_albert_test.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.5, 
-        //     move_probability: 0.3,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 12,
-        //     tickets_given_right_away: 20,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 1000,
-        //     model: Model::Urban
-        // },
-        // ExperimentConfig { // 2:1, small top-up, merchants sync every 8 hours, 8 tickets > quick sync 
-        //     honest: 1000,
-        //     double_spenders: 250,
-        //     top_up_amount: 5, 
-        //     merchants: 30, 
-        //     banks: 10,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/barabasi_albert_test.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.5, 
-        //     move_probability: 0.3,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 8,
-        //     tickets_given_right_away: 8,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 1000,
-        //     model: Model::Urban
-        // },
-        // ///////////////////////////////////
-        // // RURAL SCENARIO STARTS HERE
-        // ///////////////////////////////////
-        // /// k edges from each node -> rewire
-        // ExperimentConfig { // 1:1
-        //     honest: 750,
-        //     double_spenders: 375,
-        //     top_up_amount: 15, 
-        //     merchants: 30, 
-        //     banks: 5,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/watts-strogatz.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.6, 
-        //     move_probability: 0.2,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 8,
-        //     tickets_given_right_away: 8,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 500,
-        //     model: Model::Rural
-        // },
-        // ExperimentConfig { // 2:1
-        //     honest: 1000,
-        //     double_spenders: 250,
-        //     top_up_amount: 15,
-        //     merchants: 30, 
-        //     banks: 5,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/watts-strogatz.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.6, 
-        //     move_probability: 0.2,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 8,
-        //     tickets_given_right_away: 8,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 1000,
-        //     model: Model::Rural
-        // },
-        // ExperimentConfig { // 4:1
-        //     honest: 1200,
-        //     double_spenders: 150,
-        //     top_up_amount: 15, 
-        //     merchants: 30, 
-        //     banks: 5,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/watts-strogatz.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.6, 
-        //     move_probability: 0.2,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 8,
-        //     tickets_given_right_away: 8,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 1000,
-        //     model: Model::Rural
-        // },
-        // ExperimentConfig { // 10:1
-        //     honest: 1363,
-        //     double_spenders: 68,
-        //     top_up_amount: 15, 
-        //     merchants: 30, 
-        //     banks: 5,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/watts-strogatz.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.6, 
-        //     move_probability: 0.2,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 8,
-        //     tickets_given_right_away: 8,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 1000,
-        //     model: Model::Rural
-        // },
-        // ExperimentConfig { // 2:1, big top-up, merchants sync every 24 hours, 50 tickets > slowest sync
-        //     honest: 1000,
-        //     double_spenders: 250,
-        //     top_up_amount: 50, 
-        //     merchants: 30, 
-        //     banks: 5,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/watts-strogatz.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.6, 
-        //     move_probability: 0.2,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 24,
-        //     tickets_given_right_away: 50,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 1000,
-        //     model: Model::Rural
-        // },
-        // ExperimentConfig { // 2:1, medium top-up, merchants sync every 12 hours, 20 tickets  > slower sync
-        //     honest: 1000,
-        //     double_spenders: 250,
-        //     top_up_amount: 20, 
-        //     merchants: 30, 
-        //     banks: 5,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/watts-strogatz.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.6, 
-        //     move_probability: 0.2,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 12,
-        //     tickets_given_right_away: 20,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 1000,
-        //     model: Model::Rural
-        // },
-        // ExperimentConfig { // 2:1, small top-up, merchants sync every 8 hours, 8 tickets > quick sync 
-        //     honest: 1000,
-        //     double_spenders: 250,
-        //     top_up_amount: 5, 
-        //     merchants: 30, 
-        //     banks: 5,
-        //     graph_file: String::from("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/watts-strogatz.txt"),
-        //     p2m_probability: 0.2, 
-        //     p2p_probability: 0.6, 
-        //     move_probability: 0.2,  
-        //     random_sync_probability: 0.01,  
-        //     merchant_sync_frequency: 8,
-        //     tickets_given_right_away: 8,
-        //     tickets_lower_bound_to_sync: 2,
-        //     account_balance: 1000,
-        //     model: Model::Rural
-        // },
-    // ];
-
-    // for connections in 2_usize..15 {
-    //     experiments.push(ExperimentConfig { // 2:1
-    //         ratio_double_spenders_to_honest: 0.5,
-    //         top_up_amount: 15,
-    //         merchants: 30, 
-    //         banks: 5,
-    //         graph_file: format!("/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/graphs/watts-strogatz-{}-connections.txt", connections),
-    //         p2m_probability: 0.2, 
-    //         p2p_probability: 0.6, 
-    //         move_probability: 0.2,  
-    //         random_sync_probability: 0.01,  
-    //         merchant_sync_frequency: 8,
-    //         tickets_given_right_away: 8, 
-    //         tickets_lower_bound_to_sync: 2,
-    //         account_balance: 500,
-    //         model: Model::Rural,
-    //         graph_config: GraphConfig::Watts(WattsConfig {
-    //             size: 64, 
-    //             param: connections
-    //         }),
-    //     },)
-    // }
-    
-
-
-    let file = File::open("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/results/sobol_params.txt")?;
-    let reader = io::BufReader::new(file);    
-    
-    for (exp_param_idx, experiment_params) in reader.lines().enumerate() {
-        let experiment_params: Vec<f64> = 
-                experiment_params?
-                    .split_whitespace()
-                    .into_iter() // skip the idx of the node since it is irrelevant
-                    .map(|s| {
-                        s.parse::<f64>().expect("Input is not a float!")
-                    })
-                    .collect();
-        
-        if let [
-            p2p_probability,
-            p2m_probability
-            // ratio_double_spenders_to_honest,
-            // random_sync_probability,
-        ] = experiment_params.as_slice() {
-            for _ in 0..repeat_experiment_number_of_times {
-                experiments
-                    .entry(exp_param_idx)
-                    .or_insert_with(Vec::new)
-                    .push(
-                        ExperimentConfig { // 2:1
-                            ratio_double_spenders_to_honest: 0.5,
-                            random_sync_probability: 0.01,
-                            top_up_amount: 10,
-                            merchants: 30, 
-                            banks: 5,
-                            graph_file: format!("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/watts-strogatz-{}-connections.txt", 15),
-                            p2m_probability: *p2m_probability, 
-                            p2p_probability: *p2p_probability, 
-                            move_probability: 0.2,   
-                            merchant_sync_frequency: 8,
-                            tickets_given_right_away: 8, 
-                            tickets_lower_bound_to_sync: 2,
-                            account_balance: 200,
-                            model: Model::Rural,
-                            graph_config: GraphConfig::Watts(WattsConfig {
-                                size: 64, 
-                                param: 15,
-                            }),
-                        },
-                    );
+            for (exp_id, exp) in predefined_experiments.into_iter().enumerate() {
+                for _ in 0..repeat_experiment_number_of_times {
+                    experiments
+                        .entry(exp_id)
+                        .or_insert_with(Vec::new)
+                        .push(exp.clone());
+                }
             }
+
+            run_experiments(experiments, population_size, &experiment_dir)?;
+        },
+        Commands::Sobol { params_file, repeat, population_size } => {
+            let mut experiments: HashMap<usize, Vec<ExperimentConfig>> = HashMap::new();
+            let experiment_dir = create_experiment_directory("sobol", population_size as u64)?;
+            let file = File::open(params_file)?;
+            let reader: io::BufReader<File> = io::BufReader::new(file);    
+            
+            for (exp_param_idx, experiment_params) in reader.lines().enumerate() {
+                let experiment_params: Vec<f64> = 
+                    experiment_params?
+                        .split_whitespace()
+                        .into_iter()
+                        .map(|s| {
+                            s.parse::<f64>().expect("Input is not a float!")
+                        })
+                        .collect();
+                
+                if let [
+                    move_probability,
+                    p2p_probability,
+                    p2m_probability,
+                    ratio_double_spenders_to_honest
+                ] = experiment_params.as_slice() {
+                    for _ in 0..repeat {
+                        experiments
+                            .entry(exp_param_idx)
+                            .or_insert_with(Vec::new)
+                            .push(
+                                ExperimentConfig {
+                                    ratio_double_spenders_to_honest: *ratio_double_spenders_to_honest,
+                                    random_sync_probability: 0.01,
+                                    top_up_amount: 10,
+                                    merchants: 30, 
+                                    banks: 5,
+                                    // graph_file: format!("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/barabasi_albert_8_m.txt"),
+                                    graph_file: format!("/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/graphs/watts-strogatz-5-connections.txt"),
+                                    p2m_probability: *p2m_probability, 
+                                    p2p_probability: *p2p_probability, 
+                                    move_probability: *move_probability,   
+                                    merchant_sync_frequency: 8,
+                                    tickets_given_right_away: 8, 
+                                    tickets_lower_bound_to_sync: 2,
+                                    account_balance: 200,
+                                    model: Model::Rural,
+                                    graph_config: GraphConfig::Watts(WattsConfig {
+                                        size: 64, 
+                                        param: 5,
+                                    }),
+                                    // model: Model::Urban,
+                                    // graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                                    //     size: 64, 
+                                    //     param: 8,
+                                    // }),
+                                    category: ExperimentCategory::Sobol,
+                                },
+                            );
+                    }
+                }
+            }
+
+            run_experiments(experiments, population_size as u64, &experiment_dir)?;
         }
     }
-
-
-    // for (experiment_id, experiment_vector) in &experiments {
-    //     println!("{}", experiment_id);
-    //     for experiment in experiment_vector {
-    //         println!("{} {}", experiment.ratio_double_spenders_to_honest, experiment.random_sync_probability);
-    //     }
-    // }
-
-    // Add a HashSet to track used random IDs
-    let mut used_random_ids: HashSet<u64> = HashSet::new();
-
-    {
-        let guard = pprof::ProfilerGuardBuilder::default().frequency(1000).blocklist(&["libc", "libgcc", "pthread", "vdso"]).build().unwrap();
     
-        for (experiment_id, experiment_vector) in &experiments {
-            for experiment in experiment_vector {
-                let graph: SimulationGraph = SimulationGraph::new(experiment.graph_file.as_str())?;
-                // Use configured seed as root to spawn off all rngs.
-                let timestamp = SystemTime::now()
+    Ok(())
+}
+
+fn run_experiments(
+    experiments: HashMap<usize, Vec<ExperimentConfig>>,
+    population_size: u64,
+    experiment_dir: &str,
+) -> io::Result<()> {
+    let mut used_random_ids: HashSet<u64> = HashSet::new();
+    let guard = pprof::ProfilerGuardBuilder::default()
+        .frequency(1000)
+        .blocklist(&["libc", "libgcc", "pthread", "vdso"])
+        .build()
+        .unwrap();
+
+    for (experiment_id, experiment_vector) in &experiments {
+        for experiment in experiment_vector {
+            let graph: SimulationGraph = SimulationGraph::new(experiment.graph_file.as_str())?;
+            let timestamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos() as u64;
-                let random_component = thread_rng().gen::<u64>();
-                let unique_seed = timestamp ^ random_component;
-                let mut rng: StdRng = SeedableRng::seed_from_u64(unique_seed);
-                let mgr_seed = rng.gen::<u64>();
-                // NYC 29,729/sqmil;  300.6 sq mi= 17.33*17.33
-                // Let's aim smaller.  10*10 = 100, so 2972900 
-                // Let's aim smaller.  3 * 3 = 9 so 297290
-                //237832; // 2972900; // Full NYC pop 18867000; // 139; // 10000;  // Scaled NYC pop
+            let random_component = thread_rng().gen::<u64>();
+            let unique_seed = timestamp ^ random_component;
+            let mut rng: StdRng = SeedableRng::seed_from_u64(unique_seed);
+            let mgr_seed = rng.gen::<u64>();
 
-                let total_vertices_in_graph = graph.adjacency_list.len();
-                // println!("{total_vertices_in_graph}");
-            
-                let helper = SimulatorHelpers::new(
-                    total_vertices_in_graph.clone(),
-                    &RngConfiguration::new(
-                        mgr_seed, 
-                        3.0, 
-                        1.8, 
-                        2.0,
-                        2.0, 
-                        1.0
+            let total_vertices_in_graph = graph.adjacency_list.len();
+        
+            let helper = SimulatorHelpers::new(
+                total_vertices_in_graph.clone(),
+                &RngConfiguration::new(
+                    mgr_seed, 
+                    3.0, 
+                    1.8, 
+                    2.0,
+                    2.0, 
+                    1.0
+                ),
+            ); 
+
+            let (num_consumers, num_double_spenders) = split_population(
+                population_size, 
+                experiment.ratio_double_spenders_to_honest
+            ); 
+            let num_merchants = experiment.merchants;
+            let num_banks = experiment.banks;
+        
+            // Setup init stats
+            let mut upstats = Statistics::default();
+        
+            let default_balance = experiment.account_balance;
+            // Create enough coinage for every consumer to have $500 in the bank to get started.
+            let mut coinage = Vec::new();
+            // Use a map so we can remove these easily before we simulate.
+            let mut bank_coins: HashMap<usize, Vec<Coin>> = HashMap::new();
+            let mut coin_index = 0;
+            for c in 0..(num_consumers * default_balance) {
+                let b = c % num_banks; // (0xuki: bank id)
+                coinage.push(Coin {
+                    id: coin_index,
+                    value: 1, // all coins in the simulation have value 1!
+                    copied: false,
+                    history: vec![usize::MAX, b], // mint is usize::MAX
+                    tx_history: vec![0, 1],       // Don't need randomness since this is controlled.
+                    step_history: vec![0, 0],
+                });
+                if let Some(treasury) = bank_coins.get_mut(&b) {
+                    treasury.push(coinage.iter().last().unwrap().clone());
+                } else {
+                    bank_coins.insert(b, vec![coinage.iter().last().unwrap().clone()]);
+                }
+                coin_index += 1;
+            }
+            upstats.coins_total = coinage.len();
+            upstats.coins_valid_total = coinage.len();
+
+            let mut mgr = Manager::new(
+                Simulator::new(mgr_seed, helper),
+                SimulationPopulation::new(),
+                WorldData {
+                    step: 0,
+                    deposit_limit: experiment.top_up_amount,
+                    ticket_refill: experiment.tickets_given_right_away,
+                    graph_size: total_vertices_in_graph,
+                    graph,
+                    resources: vec![],
+                    statistics: Statistics::default(),
+                    // Operator init
+                    epoch: 0,
+                    epochs: vec![SyncState::default()],
+                    last_coin_index: coin_index,
+                    coin_map: coinage
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, v)| (i, CoinState::new(v)))
+                        .collect(),
+                    banks: (0..num_banks).collect(), // Add banks first. TODO: track then via Register() later.
+                    pending: vec![],
+                },
+            );
+            //print!("Manager: {}", serde_json::to_string_pretty(&mgr).unwrap());
+            for _ in 0..8 {
+                let client_seed = rng.gen::<u64>();
+                mgr.add_client(Box::new(LocalSimulationClient::new(Simulator::new(
+                    client_seed,
+                    SimulatorHelpers::new(
+                        total_vertices_in_graph.clone(),
+                        &RngConfiguration::new(client_seed, 3.0, 1.8, 2.0, 2.0, 1.0),
                     ),
-                ); 
-
-                let (num_consumers, num_double_spenders) = split_population(
-                    population_size, 
-                    experiment.ratio_double_spenders_to_honest
-                ); 
-                let num_merchants = experiment.merchants;
-                let num_banks = experiment.banks;
-            
-                // Setup init stats
-                let mut upstats = Statistics::default();
-            
-                let default_balance = experiment.account_balance;
-                // Create enough coinage for every consumer to have $500 in the bank to get started.
-                let mut coinage = Vec::new();
-                // Use a map so we can remove these easily before we simulate.
-                let mut bank_coins: HashMap<usize, Vec<Coin>> = HashMap::new();
-                let mut coin_index = 0;
-                for c in 0..(num_consumers * default_balance) {
-                    let b = c % num_banks; // (0xuki: bank id)
-                    coinage.push(Coin {
-                        id: coin_index,
-                        value: 1, // all coins in the simulation have value 1!
-                        copied: false,
-                        history: vec![usize::MAX, b], // mint is usize::MAX
-                        tx_history: vec![0, 1],       // Don't need randomness since this is controlled.
-                        step_history: vec![0, 0],
-                    });
-                    if let Some(treasury) = bank_coins.get_mut(&b) {
-                        treasury.push(coinage.iter().last().unwrap().clone());
-                    } else {
-                        bank_coins.insert(b, vec![coinage.iter().last().unwrap().clone()]);
-                    }
-                    coin_index += 1;
-                }
-                upstats.coins_total = coinage.len();
-                upstats.coins_valid_total = coinage.len();
-
-                let mut mgr = Manager::new(
-                    Simulator::new(mgr_seed, helper),
-                    SimulationPopulation::new(),
-                    WorldData {
-                        step: 0,
-                        deposit_limit: experiment.top_up_amount,
-                        ticket_refill: experiment.tickets_given_right_away,
-                        graph_size: total_vertices_in_graph,
-                        graph,
-                        resources: vec![],
-                        statistics: Statistics::default(),
-                        // Operator init
-                        epoch: 0,
-                        epochs: vec![SyncState::default()],
-                        last_coin_index: coin_index,
-                        coin_map: coinage
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, v)| (i, CoinState::new(v)))
-                            .collect(),
-                        banks: (0..num_banks).collect(), // Add banks first. TODO: track then via Register() later.
-                        pending: vec![],
-                    },
-                );
-                //print!("Manager: {}", serde_json::to_string_pretty(&mgr).unwrap());
-                for _ in 0..8 {
-                    let client_seed = rng.gen::<u64>();
-                    mgr.add_client(Box::new(LocalSimulationClient::new(Simulator::new(
-                        client_seed,
-                        SimulatorHelpers::new(
-                            total_vertices_in_graph.clone(),
-                            &RngConfiguration::new(client_seed, 3.0, 1.8, 2.0, 2.0, 1.0),
-                        ),
-                    ))));
-                }
-                // Create a few banks and expect their IDs to be 0..num_banks
-                for b in 0..num_banks {
-                    let idx = rng.gen_range(0..mgr.world().graph_size);
-                    mgr.enqueue(
-                        Address::NoAddress,
-                        Address::Population,
-                        vec![EventData::Arrive(PopulationAdd {
-                            data: AgentData {
-                                location: GraphVertexIndex(idx),
-                                registered: true,
-                                epoch: 0,
-                                coins: bank_coins.remove(&b).unwrap(),
-                                pending: vec![],
-                                role: AgentRole::Bank(BankData { holding: vec![] }),
-                            },
-                            count: 1,
-                        })],
-                    );
-                }
-            
-                // Randomly place 10k consumers
-                for c in 0..num_consumers {
-                    let idx = rng.gen_range(0..mgr.world().graph_size);
-                    mgr.enqueue(
-                        Address::NoAddress,
-                        Address::Population,
-                        vec![EventData::Arrive(PopulationAdd {
-                            data: AgentData {
-                                location: GraphVertexIndex(idx),
-                                registered: false,
-                                epoch: 0,
-                                coins: vec![],
-                                pending: vec![],
-                                role: AgentRole::Consumer(ConsumerData {
-                                    lifetime: 43800, // 5 years in hours for phone lifetime.
-                                    sync_probability: experiment.random_sync_probability,
-                                    sync_distribution: SupportedDistributions::Uniform,
-                                    p2m_probability: experiment.p2m_probability,
-                                    p2m_distribution: SupportedDistributions::Uniform,
-                                    p2p_probability: experiment.p2p_probability,
-                                    p2p_distribution: SupportedDistributions::Uniform,
-                                    double_spend_probability: 0.0,
-                                    double_spend_distribution: SupportedDistributions::Uniform,
-                                    max_rejections: 5,
-                                    move_distribution: SupportedDistributions::Uniform,
-                                    move_probability: experiment.move_probability,
-                                    /*(
-                                    step_period: 24,
-                                    max_transactions_per_period: 2,
-                                    */
-                                    wids: experiment.tickets_given_right_away,
-                                    wid_low_watermark: experiment.tickets_lower_bound_to_sync,
-                                    account_balance: default_balance,
-                                    last_requested_step: 0,
-                                    // (0xuki) TODO: change bank assignment procedure to account for distance to the bank!
-                                    bank: c % num_banks, // ensure we match the balance with the coins. TODO: Register() to get bank and balance.
-                                }),
-                            },
-                            count: 1,
-                        })],
-                    );
-                }
-            
-                // Randomly place double spenders
-                for _ in 0..num_double_spenders {
-                    let idx = rng.gen_range(0..mgr.world().graph_size);
-                    mgr.enqueue(
-                        Address::NoAddress,
-                        Address::Population,
-                        vec![EventData::Arrive(PopulationAdd {
-                            data: AgentData {
-                                location: GraphVertexIndex(idx),
-                                registered: false,
-                                epoch: 0,
-                                coins: vec![],
-                                pending: vec![],
-                                role: AgentRole::Consumer(ConsumerData {
-                                    lifetime: 43800, // 5 years in hours for phone lifetime.
-                                    sync_probability: 0.0,
-                                    sync_distribution: SupportedDistributions::Uniform,
-                                    p2m_probability: 1.0,
-                                    p2m_distribution: SupportedDistributions::Uniform,
-                                    p2p_probability: 1.0,
-                                    p2p_distribution: SupportedDistributions::Uniform,
-                                    double_spend_probability: 1.0,
-                                    double_spend_distribution: SupportedDistributions::Uniform,
-                                    max_rejections: 5,
-                                    move_distribution: SupportedDistributions::Uniform,
-                                    move_probability: 1.0,
-                                    /*
-                                    step_period: 24,
-                                    max_transactions_per_period: 72,
-                                    */
-                                    wids: experiment.tickets_given_right_away,
-                                    wid_low_watermark: experiment.tickets_lower_bound_to_sync,
-                                    account_balance: default_balance,
-                                    last_requested_step: 0,
-                                    bank: rng.gen_range(0..num_banks),
-                                }),
-                            },
-                            count: 1,
-                        })],
-                    );
-                }
-            
-                // Randomly place double spenders in the future
-                for _ in 0..num_double_spenders {
-                    let idx = rng.gen_range(0..mgr.world().graph_size);
-                    mgr.enqueue_delayed(
-                        Address::NoAddress,
-                        Address::Population,
-                        vec![EventData::Arrive(PopulationAdd {
-                            data: AgentData {
-                                location: GraphVertexIndex(idx),
-                                registered: false,
-                                epoch: 0,
-                                coins: vec![],
-                                pending: vec![],
-                                role: AgentRole::Consumer(ConsumerData {
-                                    lifetime: 43800, // 5 years in hours for phone lifetime.
-                                    sync_probability: 0.0,
-                                    sync_distribution: SupportedDistributions::Uniform,
-                                    p2m_probability: 1.0,
-                                    p2m_distribution: SupportedDistributions::Uniform,
-                                    p2p_probability: 1.0,
-                                    p2p_distribution: SupportedDistributions::Uniform,
-                                    double_spend_probability: 1.0,
-                                    double_spend_distribution: SupportedDistributions::Uniform,
-                                    max_rejections: 5,
-                                    move_distribution: SupportedDistributions::Uniform,
-                                    move_probability: 1.0,
-                                    /*
-                                    step_period: 24,
-                                    max_transactions_per_period: 72,
-                                    */
-                                    wids: experiment.tickets_given_right_away,
-                                    wid_low_watermark: experiment.tickets_lower_bound_to_sync,
-                                    account_balance: default_balance,
-                                    last_requested_step: 0,
-                                    bank: rng.gen_range(0..num_banks),
-                                }),
-                            },
-                            count: 1,
-                        })],
-                        15,
-                    );
-                }
-            
-                upstats.double_spenders_total = num_double_spenders * 2;
-                upstats.total_people = upstats.double_spenders_total + num_consumers;
-
-
-                // Update the states
+                ))));
+            }
+            // Create a few banks and expect their IDs to be 0..num_banks
+            for b in 0..num_banks {
+                let idx = rng.gen_range(0..mgr.world().graph_size);
                 mgr.enqueue(
                     Address::NoAddress,
-                    Address::World,
-                    vec![EventData::UpdateStatistics(upstats)],
+                    Address::Population,
+                    vec![EventData::Arrive(PopulationAdd {
+                        data: AgentData {
+                            location: GraphVertexIndex(idx),
+                            registered: true,
+                            epoch: 0,
+                            coins: bank_coins.remove(&b).unwrap(),
+                            pending: vec![],
+                            role: AgentRole::Bank(BankData { holding: vec![] }),
+                        },
+                        count: 1,
+                    })],
                 );
-            
-                // Randomly place consumers/115 merchants
-                for _ in 0..num_merchants {
-                    let idx = rng.gen_range(0..(mgr.world().graph_size));
-                    mgr.enqueue(
-                        Address::NoAddress,
-                        Address::Population,
-                        vec![EventData::Arrive(PopulationAdd {
-                            data: AgentData {
-                                location: GraphVertexIndex(idx),
-                                registered: false,
-                                epoch: 0,
-                                coins: vec![],
-                                pending: vec![],
-                                role: AgentRole::Merchant(MerchantData {
-                                    lifetime: 183960, // 21 years in hours -- avg lifespan of company S&P.
-                                    sync_frequency: experiment.merchant_sync_frequency, // every `sync_frequency` hours make a transfer to the bank -> sync as a result!
-                                    // sync_probability: 0.01, 
-                                    // sync_distribution: SupportedDistributions::Uniform,
-                                    account_balance: 0,
-                                    last_tx_step: None,
-                                    bank: rng.gen_range(0..num_banks),
-                                }),
-                            },
-                            count: 1,
-                        })],
-                    );
-                }
-            
-                // mgr.register_observer(1, &observe);
-                // mgr.register_observer(1, &check_exit_conditions_and_print_results_to_file);
-                mgr.register_observer(1, check_exit_conditions_and_print_results_to_file_avged_out);
-                
-                match &experiment.graph_config {
-                    GraphConfig::Watts(wc) => { 
-                        // Generate unique random ID
-                        let mut random_id = rng.gen::<u64>();
-                        while used_random_ids.contains(&random_id) {
-                            random_id = rng.gen::<u64>();
-                        }
-                        used_random_ids.insert(random_id);
-
-                        mgr.run(
-                            4000, 
-                            format!(
-                                "/home/fanlgrp/Projects/briolette_cbdc_paper/src/simulation/briolettesim/results/sobol_results/rural/model_{:?}_p2p_{}_p2m_{}_expid_{}.txt",
-                                // "/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/results/sobol_results/rural/experiment_results_model_{:?}_ratio_{}_topup_{}_tickets_{}_config_{:?}_expid_{}.txt",
-                                experiment.model,
-                                experiment.p2p_probability,
-                                experiment.p2m_probability,
-                                experiment_id
-                            ).as_str()
-                        );
-                    },
-                    GraphConfig::Barabasi(bc) => {
-                        // Generate unique random ID
-                        let mut random_id = rng.gen::<u64>();
-                        while used_random_ids.contains(&random_id) {
-                            random_id = rng.gen::<u64>();
-                        }
-                        used_random_ids.insert(random_id);
-
-                        mgr.run(
-                            4000, 
-                            format!(
-                                "/home/vladyslav/VSCodeProjects/briolette/src/simulation/briolettesim/results/sobol_results/urban/experiment_results_model_{:?}_ratio_{}_topup_{}_tickets_{}_config_{:?}_{}.txt", 
-                                experiment.model,
-                                num_consumers as f64 / (num_double_spenders * 2) as f64,
-                                experiment.top_up_amount,
-                                experiment.tickets_given_right_away,
-                                bc.param,
-                                random_id  // Add random ID to filename
-                            ).as_str()
-                        );
-                    }
-                };
             }
-            if let Ok(report) = guard.report().build() {
-                let file = File::create("flamegraph.svg").unwrap();
-                report.flamegraph(file).unwrap();
+        
+            // Randomly place 10k consumers
+            for c in 0..num_consumers {
+                let idx = rng.gen_range(0..mgr.world().graph_size);
+                mgr.enqueue(
+                    Address::NoAddress,
+                    Address::Population,
+                    vec![EventData::Arrive(PopulationAdd {
+                        data: AgentData {
+                            location: GraphVertexIndex(idx),
+                            registered: false,
+                            epoch: 0,
+                            coins: vec![],
+                            pending: vec![],
+                            role: AgentRole::Consumer(ConsumerData {
+                                lifetime: 43800, // 5 years in hours for phone lifetime.
+                                sync_probability: experiment.random_sync_probability,
+                                sync_distribution: SupportedDistributions::Uniform,
+                                p2m_probability: experiment.p2m_probability,
+                                p2m_distribution: SupportedDistributions::Uniform,
+                                p2p_probability: experiment.p2p_probability,
+                                p2p_distribution: SupportedDistributions::Uniform,
+                                double_spend_probability: 0.0,
+                                double_spend_distribution: SupportedDistributions::Uniform,
+                                max_rejections: 5,
+                                move_distribution: SupportedDistributions::Uniform,
+                                move_probability: experiment.move_probability,
+                                /*(
+                                step_period: 24,
+                                max_transactions_per_period: 2,
+                                */
+                                wids: experiment.tickets_given_right_away,
+                                wid_low_watermark: experiment.tickets_lower_bound_to_sync,
+                                account_balance: default_balance,
+                                last_requested_step: 0,
+                                // (0xuki) TODO: change bank assignment procedure to account for distance to the bank!
+                                bank: c % num_banks, // ensure we match the balance with the coins. TODO: Register() to get bank and balance.
+                            }),
+                        },
+                        count: 1,
+                    })],
+                );
+            }
+        
+            // Randomly place double spenders
+            for _ in 0..num_double_spenders {
+                let idx = rng.gen_range(0..mgr.world().graph_size);
+                mgr.enqueue(
+                    Address::NoAddress,
+                    Address::Population,
+                    vec![EventData::Arrive(PopulationAdd {
+                        data: AgentData {
+                            location: GraphVertexIndex(idx),
+                            registered: false,
+                            epoch: 0,
+                            coins: vec![],
+                            pending: vec![],
+                            role: AgentRole::Consumer(ConsumerData {
+                                lifetime: 43800, // 5 years in hours for phone lifetime.
+                                sync_probability: 0.0,
+                                sync_distribution: SupportedDistributions::Uniform,
+                                p2m_probability: 1.0,
+                                p2m_distribution: SupportedDistributions::Uniform,
+                                p2p_probability: 1.0,
+                                p2p_distribution: SupportedDistributions::Uniform,
+                                double_spend_probability: 1.0,
+                                double_spend_distribution: SupportedDistributions::Uniform,
+                                max_rejections: 5,
+                                move_distribution: SupportedDistributions::Uniform,
+                                move_probability: 1.0,
+                                /*
+                                step_period: 24,
+                                max_transactions_per_period: 72,
+                                */
+                                wids: experiment.tickets_given_right_away,
+                                wid_low_watermark: experiment.tickets_lower_bound_to_sync,
+                                account_balance: default_balance,
+                                last_requested_step: 0,
+                                bank: rng.gen_range(0..num_banks),
+                            }),
+                        },
+                        count: 1,
+                    })],
+                );
+            }
+        
+            // Randomly place double spenders in the future
+            for _ in 0..num_double_spenders {
+                let idx = rng.gen_range(0..mgr.world().graph_size);
+                mgr.enqueue_delayed(
+                    Address::NoAddress,
+                    Address::Population,
+                    vec![EventData::Arrive(PopulationAdd {
+                        data: AgentData {
+                            location: GraphVertexIndex(idx),
+                            registered: false,
+                            epoch: 0,
+                            coins: vec![],
+                            pending: vec![],
+                            role: AgentRole::Consumer(ConsumerData {
+                                lifetime: 43800, // 5 years in hours for phone lifetime.
+                                sync_probability: 0.0,
+                                sync_distribution: SupportedDistributions::Uniform,
+                                p2m_probability: 1.0,
+                                p2m_distribution: SupportedDistributions::Uniform,
+                                p2p_probability: 1.0,
+                                p2p_distribution: SupportedDistributions::Uniform,
+                                double_spend_probability: 1.0,
+                                double_spend_distribution: SupportedDistributions::Uniform,
+                                max_rejections: 5,
+                                move_distribution: SupportedDistributions::Uniform,
+                                move_probability: 1.0,
+                                /*
+                                step_period: 24,
+                                max_transactions_per_period: 72,
+                                */
+                                wids: experiment.tickets_given_right_away,
+                                wid_low_watermark: experiment.tickets_lower_bound_to_sync,
+                                account_balance: default_balance,
+                                last_requested_step: 0,
+                                bank: rng.gen_range(0..num_banks),
+                            }),
+                        },
+                        count: 1,
+                    })],
+                    15,
+                );
+            }
+        
+            upstats.double_spenders_total = num_double_spenders * 2;
+            upstats.total_people = upstats.double_spenders_total + num_consumers;
+
+
+            // Update the states
+            mgr.enqueue(
+                Address::NoAddress,
+                Address::World,
+                vec![EventData::UpdateStatistics(upstats)],
+            );
+        
+            // Randomly place consumers/115 merchants
+            for _ in 0..num_merchants {
+                let idx = rng.gen_range(0..(mgr.world().graph_size));
+                mgr.enqueue(
+                    Address::NoAddress,
+                    Address::Population,
+                    vec![EventData::Arrive(PopulationAdd {
+                        data: AgentData {
+                            location: GraphVertexIndex(idx),
+                            registered: false,
+                            epoch: 0,
+                            coins: vec![],
+                            pending: vec![],
+                            role: AgentRole::Merchant(MerchantData {
+                                lifetime: 183960, // 21 years in hours -- avg lifespan of company S&P.
+                                sync_frequency: experiment.merchant_sync_frequency, // every `sync_frequency` hours make a transfer to the bank -> sync as a result!
+                                // sync_probability: 0.01, 
+                                // sync_distribution: SupportedDistributions::Uniform,
+                                account_balance: 0,
+                                last_tx_step: None,
+                                bank: rng.gen_range(0..num_banks),
+                            }),
+                        },
+                        count: 1,
+                    })],
+                );
+            }
+        
+            // mgr.register_observer(1, &observe);
+            // mgr.register_observer(1, &check_exit_conditions_and_print_results_to_file);
+            mgr.register_observer(1, check_exit_conditions_and_print_results_to_file_avged_out);
+            
+            match &experiment.graph_config {
+                GraphConfig::Watts(wc) => { 
+                    let mut random_id = rng.gen::<u64>();
+                    while used_random_ids.contains(&random_id) {
+                        random_id = rng.gen::<u64>();
+                    }
+                    used_random_ids.insert(random_id);
+
+                    let subdir = format!("{}/rural", experiment_dir);
+                    let file_path = format!(
+                        "{}/model_{:?}_p2p_{}_p2m_{}_ratiodoublespenders_{}_move_{}_expid_{}_{:?}_{}k_actors.txt",
+                        subdir,
+                        experiment.model,
+                        experiment.p2p_probability,
+                        experiment.p2m_probability,
+                        experiment.ratio_double_spenders_to_honest,
+                        experiment.move_probability,
+                        experiment_id,
+                        experiment.category,
+                        population_size / 1000
+                    );
+
+                    // Ensure the directory exists
+                    if let Some(parent) = Path::new(&file_path).parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+
+                    mgr.run(4000, &file_path);
+                },
+                GraphConfig::Barabasi(bc) => {
+                    let mut random_id = rng.gen::<u64>();
+                    while used_random_ids.contains(&random_id) {
+                        random_id = rng.gen::<u64>();
+                    }
+                    used_random_ids.insert(random_id);
+
+                    let subdir = format!("{}/urban", experiment_dir);
+                    let file_path = format!(
+                        "{}/model_{:?}_p2p_{}_p2m_{}_ratiodoublespenders_{}_move_{}_expid_{}_{:?}_{}k_actors.txt",
+                        subdir,
+                        experiment.model,
+                        experiment.p2p_probability,
+                        experiment.p2m_probability,
+                        experiment.ratio_double_spenders_to_honest,
+                        experiment.move_probability,
+                        experiment_id,
+                        experiment.category,
+                        population_size / 1000
+                    );
+
+                    // Ensure the directory exists
+                    if let Some(parent) = Path::new(&file_path).parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+
+                    mgr.run(4000, &file_path);
+                }
             };
         }
+        if let Ok(report) = guard.report().build() {
+            let flamegraph_path = format!("{}/flamegraph.svg", experiment_dir);
+            let file = File::create(&flamegraph_path)?;
+            report.flamegraph(file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        };
     }
     
     Ok(())
@@ -1444,27 +1584,29 @@ fn check_exit_conditions_and_print_results_to_file(
     end_simulation_flag: &mut bool, 
     file_path: &str
 ) {
-    let mut epsilon_stop_flag = true;
-    let starting_window_ratio = world.statistics.caught_ratios_epsilon_stop[0];
-    // if caught more than 4 ppl in 30-step range, don't stop
-    if world.statistics.caught_ratios_epsilon_stop.last().unwrap() - starting_window_ratio > (5.0 / 500.0) {
-        epsilon_stop_flag = false;
-    }
-
-    // if world.statistics.double_spenders_total == world.statistics.double_spenders_revoked_total {
-    // if step == 1000 {
-    if epsilon_stop_flag && world.statistics.caught_ratios_epsilon_stop.len() == 25 {
+    if step == 72 {
         *end_simulation_flag = true;
-        // time to exit; write important information about the experiment to the file, and flag that we need to move on (???)
-        // need to pass a flag inside for "exiting" the simulation for current parameters I suppose...
-        let mut file = match File::create(file_path) {
-            Ok(handle) => handle,
-            Err(e) => panic!("{}", e),
-        };
-        
+        // Ensure the directory exists
+        if let Some(parent) = Path::new(file_path).parent() {
+            fs::create_dir_all(parent).unwrap_or_else(|e| {
+                eprintln!("Failed to create directory {:?}: {}", parent, e);
+                panic!("Failed to create directory");
+            });
+        }
+
+        let mut file = OpenOptions::new()
+            .create(true)  // Create the file if it doesn't exist
+            .write(true)   // Open the file for writing
+            .append(true)  // Append to the file if it exists
+            .open(file_path)
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to open file {}: {}", file_path, e);
+                panic!("Failed to open file");
+            });
+
         // How many simulation steps have passed since initial double-spending fork?
-        for item in &world.statistics.double_spent_life_measurements {
-            match write!(file, "{} ", item) {
+        for (epoch, life) in &world.statistics.double_spent_life_measurements {
+            match write!(file, "{} {} ", epoch, life) {
                 Ok(_) => (),
                 Err(e) => panic!("{}", e) 
             }
@@ -1472,11 +1614,11 @@ fn check_exit_conditions_and_print_results_to_file(
         match writeln!(file) {
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
-        };
+        }
 
         // How many transactions have passed since initial double-spending fork?
-        for item in &world.statistics.double_spent_txs_measurements {
-            match write!(file, "{} ", item) {
+        for (epoch, txs) in &world.statistics.double_spent_txs_measurements {
+            match write!(file, "{} {} ", epoch, txs) {
                 Ok(_) => (),
                 Err(e) => panic!("{}", e) 
             }
@@ -1484,64 +1626,57 @@ fn check_exit_conditions_and_print_results_to_file(
         match writeln!(file) {
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
-        };
+        }
 
         // Step when all cheaters have been caught
         match writeln!(file, "{}", step) {
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
-        };
-        
+        }
 
-        // Ratio (double_spent_coins /   coins_total)
+        // Ratio (double_spent_coins / coins_total)
         for item in &world.statistics.ratios_of_double_spent_coins {
             match write!(file, "{} ", item) {
                 Ok(_) => (),
                 Err(e) => panic!("{}", e) 
-            }; 
+            }
         }
         match writeln!(file) {
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
-        };
+        }
 
-
-        // Ratio (double_spent_coins /   coins_total)
+        // Ratio (double_spenters / double_spenders_total) (???)
         for item in &world.statistics.ratio_of_double_spenders_caught {
             match write!(file, "{} ", item) {
                 Ok(_) => (),
                 Err(e) => panic!("{}", e) 
-            }; 
+            }
         }
         match writeln!(file) {
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
-        };
+        }
 
         // mean/std/max for (global - local) epoch diffs
         for item in &world.statistics.global_to_local_epoch_diffs {
             match write!(file, "{} {} {}:", item.mean, item.standard_deviation, item.max_diff) {
                 Ok(_) => (),
                 Err(e) => panic!("{}", e) 
-            }; 
+            }
         }
         match writeln!(file) {
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
-        };
+        }
 
-
-         // std for intra-sample epoch diffs
+        // std for intra-sample epoch diffs
         for item in &world.statistics.std_local_epoch_diffs {
             match write!(file, "{} ", item) {
                 Ok(_) => (),
                 Err(e) => panic!("{}", e) 
-            }; 
+            }
         }
-
-
-        println!("Wrote stats to the file!");
-        
     }
 }
 
@@ -1554,67 +1689,60 @@ fn check_exit_conditions_and_print_results_to_file_avged_out(
     end_simulation_flag: &mut bool, 
     file_path: &str
 ) {
-    let mut epsilon_stop_flag = true;
-    let starting_window_ratio = world.statistics.caught_ratios_epsilon_stop[0];
-    // if caught more than 4 ppl in 30-step range, don't stop
-    if world.statistics.caught_ratios_epsilon_stop.last().unwrap() - starting_window_ratio > (5.0 / 500.0) {
-        epsilon_stop_flag = false;
-    }
-
-    // if world.statistics.double_spenders_total == world.statistics.double_spenders_revoked_total {
-    // if step == 1000 {
-    if epsilon_stop_flag && world.statistics.caught_ratios_epsilon_stop.len() == 25 {
+    if step == 72 {
         *end_simulation_flag = true;
-        // time to exit; write important information about the experiment to the file, and flag that we need to move on (???)
-        // need to pass a flag inside for "exiting" the simulation for current parameters I suppose...
+        // Ensure the directory exists
+        if let Some(parent) = Path::new(file_path).parent() {
+            fs::create_dir_all(parent).unwrap_or_else(|e| {
+                eprintln!("Failed to create directory {:?}: {}", parent, e);
+                panic!("Failed to create directory");
+            });
+        }
+
         let mut file = OpenOptions::new()
             .create(true)  // Create the file if it doesn't exist
             .write(true)   // Open the file for writing
             .append(true)  // Append to the file if it exists
             .open(file_path)
-            .unwrap();
-        
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to open file {}: {}", file_path, e);
+                panic!("Failed to open file");
+            });
 
-        // Ratio (double_spent_coins /   coins_total)
+        // Ratio (double_spent_coins / coins_total)
         for item in &world.statistics.ratios_of_double_spent_coins {
             match write!(file, "{} ", item) {
                 Ok(_) => (),
                 Err(e) => panic!("{}", e) 
-            }; 
+            }
         }
         match writeln!(file) {
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
-        };
+        }
 
-
-        // Ratio (double_spent_coins /   coins_total)
+        // Ratio (double_spenters / double_spenders_total) (???)
         for item in &world.statistics.ratio_of_double_spenders_caught {
             match write!(file, "{} ", item) {
                 Ok(_) => (),
                 Err(e) => panic!("{}", e) 
-            }; 
+            }
         }
         match writeln!(file) {
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
-        };
+        }
 
-         // mean/std/max for (global - local) epoch diffs
-         for item in &world.statistics.global_to_local_epoch_diffs {
+        // mean/std/max for (global - local) epoch diffs
+        for item in &world.statistics.global_to_local_epoch_diffs {
             match write!(file, "{} {} {}:", item.mean, item.standard_deviation, item.max_diff) {
                 Ok(_) => (),
                 Err(e) => panic!("{}", e) 
-            }; 
+            }
         }
         match writeln!(file) {
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
-        };
-
-
-
-        println!("Wrote stats to the file!");
-        
+        }
     }
 }

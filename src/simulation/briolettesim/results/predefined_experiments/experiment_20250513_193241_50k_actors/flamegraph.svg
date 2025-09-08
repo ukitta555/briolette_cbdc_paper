@@ -1,0 +1,491 @@
+<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg version="1.1" width="1200" height="374" onload="init(evt)" viewBox="0 0 1200 374" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:fg="http://github.com/jonhoo/inferno"><!--Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples.--><!--NOTES: --><defs><linearGradient id="background" y1="0" y2="1" x1="0" x2="0"><stop stop-color="#eeeeee" offset="5%"/><stop stop-color="#eeeeb0" offset="95%"/></linearGradient></defs><style type="text/css">
+text { font-family:monospace; font-size:12px }
+#title { text-anchor:middle; font-size:17px; }
+#matched { text-anchor:end; }
+#search { text-anchor:end; opacity:0.1; cursor:pointer; }
+#search:hover, #search.show { opacity:1; }
+#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+#unzoom { cursor:pointer; }
+#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+.hide { display:none; }
+.parent { opacity:0.5; }
+</style><script type="text/ecmascript"><![CDATA[
+        var nametype = 'Function:';
+        var fontsize = 12;
+        var fontwidth = 0.59;
+        var xpad = 10;
+        var inverted = false;
+        var searchcolor = 'rgb(230,0,230)';
+        var fluiddrawing = true;
+        var truncate_text_right = false;
+    ]]><![CDATA["use strict";
+var details, searchbtn, unzoombtn, matchedtxt, svg, searching, frames, known_font_width;
+function init(evt) {
+    details = document.getElementById("details").firstChild;
+    searchbtn = document.getElementById("search");
+    unzoombtn = document.getElementById("unzoom");
+    matchedtxt = document.getElementById("matched");
+    svg = document.getElementsByTagName("svg")[0];
+    frames = document.getElementById("frames");
+    known_font_width = get_monospace_width(frames);
+    total_samples = parseInt(frames.attributes.total_samples.value);
+    searching = 0;
+
+    // Use GET parameters to restore a flamegraph's state.
+    var restore_state = function() {
+        var params = get_params();
+        if (params.x && params.y)
+            zoom(find_group(document.querySelector('[*|x="' + params.x + '"][y="' + params.y + '"]')));
+        if (params.s)
+            search(params.s);
+    };
+
+    if (fluiddrawing) {
+        // Make width dynamic so the SVG fits its parent's width.
+        svg.removeAttribute("width");
+        // Edge requires us to have a viewBox that gets updated with size changes.
+        var isEdge = /Edge\/\d./i.test(navigator.userAgent);
+        if (!isEdge) {
+            svg.removeAttribute("viewBox");
+        }
+        var update_for_width_change = function() {
+            if (isEdge) {
+                svg.attributes.viewBox.value = "0 0 " + svg.width.baseVal.value + " " + svg.height.baseVal.value;
+            }
+
+            // Keep consistent padding on left and right of frames container.
+            frames.attributes.width.value = svg.width.baseVal.value - xpad * 2;
+
+            // Text truncation needs to be adjusted for the current width.
+            update_text_for_elements(frames.children);
+
+            // Keep search elements at a fixed distance from right edge.
+            var svgWidth = svg.width.baseVal.value;
+            searchbtn.attributes.x.value = svgWidth - xpad;
+            matchedtxt.attributes.x.value = svgWidth - xpad;
+        };
+        window.addEventListener('resize', function() {
+            update_for_width_change();
+        });
+        // This needs to be done asynchronously for Safari to work.
+        setTimeout(function() {
+            unzoom();
+            update_for_width_change();
+            restore_state();
+        }, 0);
+    } else {
+        restore_state();
+    }
+}
+// event listeners
+window.addEventListener("click", function(e) {
+    var target = find_group(e.target);
+    if (target) {
+        if (target.nodeName == "a") {
+            if (e.ctrlKey === false) return;
+            e.preventDefault();
+        }
+        if (target.classList.contains("parent")) unzoom();
+        zoom(target);
+
+        // set parameters for zoom state
+        var el = target.querySelector("rect");
+        if (el && el.attributes && el.attributes.y && el.attributes["fg:x"]) {
+            var params = get_params()
+            params.x = el.attributes["fg:x"].value;
+            params.y = el.attributes.y.value;
+            history.replaceState(null, null, parse_params(params));
+        }
+    }
+    else if (e.target.id == "unzoom") {
+        unzoom();
+
+        // remove zoom state
+        var params = get_params();
+        if (params.x) delete params.x;
+        if (params.y) delete params.y;
+        history.replaceState(null, null, parse_params(params));
+    }
+    else if (e.target.id == "search") search_prompt();
+}, false)
+// mouse-over for info
+// show
+window.addEventListener("mouseover", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = nametype + " " + g_to_text(target);
+}, false)
+// clear
+window.addEventListener("mouseout", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = ' ';
+}, false)
+// ctrl-F for search
+window.addEventListener("keydown",function (e) {
+    if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+        e.preventDefault();
+        search_prompt();
+    }
+}, false)
+// functions
+function get_params() {
+    var params = {};
+    var paramsarr = window.location.search.substr(1).split('&');
+    for (var i = 0; i < paramsarr.length; ++i) {
+        var tmp = paramsarr[i].split("=");
+        if (!tmp[0] || !tmp[1]) continue;
+        params[tmp[0]]  = decodeURIComponent(tmp[1]);
+    }
+    return params;
+}
+function parse_params(params) {
+    var uri = "?";
+    for (var key in params) {
+        uri += key + '=' + encodeURIComponent(params[key]) + '&';
+    }
+    if (uri.slice(-1) == "&")
+        uri = uri.substring(0, uri.length - 1);
+    if (uri == '?')
+        uri = window.location.href.split('?')[0];
+    return uri;
+}
+function find_child(node, selector) {
+    var children = node.querySelectorAll(selector);
+    if (children.length) return children[0];
+    return;
+}
+function find_group(node) {
+    var parent = node.parentElement;
+    if (!parent) return;
+    if (parent.id == "frames") return node;
+    return find_group(parent);
+}
+function orig_save(e, attr, val) {
+    if (e.attributes["fg:orig_" + attr] != undefined) return;
+    if (e.attributes[attr] == undefined) return;
+    if (val == undefined) val = e.attributes[attr].value;
+    e.setAttribute("fg:orig_" + attr, val);
+}
+function orig_load(e, attr) {
+    if (e.attributes["fg:orig_"+attr] == undefined) return;
+    e.attributes[attr].value = e.attributes["fg:orig_" + attr].value;
+    e.removeAttribute("fg:orig_" + attr);
+}
+function g_to_text(e) {
+    var text = find_child(e, "title").firstChild.nodeValue;
+    return (text)
+}
+function g_to_func(e) {
+    var func = g_to_text(e);
+    // if there's any manipulation we want to do to the function
+    // name before it's searched, do it here before returning.
+    return (func);
+}
+function get_monospace_width(frames) {
+    // Given the id="frames" element, return the width of text characters if
+    // this is a monospace font, otherwise return 0.
+    text = find_child(frames.children[0], "text");
+    originalContent = text.textContent;
+    text.textContent = "!";
+    bangWidth = text.getComputedTextLength();
+    text.textContent = "W";
+    wWidth = text.getComputedTextLength();
+    text.textContent = originalContent;
+    if (bangWidth === wWidth) {
+        return bangWidth;
+    } else {
+        return 0;
+    }
+}
+function update_text_for_elements(elements) {
+    // In order to render quickly in the browser, you want to do one pass of
+    // reading attributes, and one pass of mutating attributes. See
+    // https://web.dev/avoid-large-complex-layouts-and-layout-thrashing/ for details.
+
+    // Fall back to inefficient calculation, if we're variable-width font.
+    // TODO This should be optimized somehow too.
+    if (known_font_width === 0) {
+        for (var i = 0; i < elements.length; i++) {
+            update_text(elements[i]);
+        }
+        return;
+    }
+
+    var textElemNewAttributes = [];
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var r = find_child(e, "rect");
+        var t = find_child(e, "text");
+        var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+        var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+        var newX = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+        // Smaller than this size won't fit anything
+        if (w < 2 * known_font_width) {
+            textElemNewAttributes.push([newX, ""]);
+            continue;
+        }
+
+        // Fit in full text width
+        if (txt.length * known_font_width < w) {
+            textElemNewAttributes.push([newX, txt]);
+            continue;
+        }
+
+        var substringLength = Math.floor(w / known_font_width) - 2;
+        if (truncate_text_right) {
+            // Truncate the right side of the text.
+            textElemNewAttributes.push([newX, txt.substring(0, substringLength) + ".."]);
+            continue;
+        } else {
+            // Truncate the left side of the text.
+            textElemNewAttributes.push([newX, ".." + txt.substring(txt.length - substringLength, txt.length)]);
+            continue;
+        }
+    }
+
+    console.assert(textElemNewAttributes.length === elements.length, "Resize failed, please file a bug at https://github.com/jonhoo/inferno/");
+
+    // Now that we know new textContent, set it all in one go so we don't refresh a bazillion times.
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var values = textElemNewAttributes[i];
+        var t = find_child(e, "text");
+        t.attributes.x.value = values[0];
+        t.textContent = values[1];
+    }
+}
+
+function update_text(e) {
+    var r = find_child(e, "rect");
+    var t = find_child(e, "text");
+    var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+    var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+    t.attributes.x.value = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+    // Smaller than this size won't fit anything
+    if (w < 2 * fontsize * fontwidth) {
+        t.textContent = "";
+        return;
+    }
+    t.textContent = txt;
+    // Fit in full text width
+    if (t.getComputedTextLength() < w)
+        return;
+    if (truncate_text_right) {
+        // Truncate the right side of the text.
+        for (var x = txt.length - 2; x > 0; x--) {
+            if (t.getSubStringLength(0, x + 2) <= w) {
+                t.textContent = txt.substring(0, x) + "..";
+                return;
+            }
+        }
+    } else {
+        // Truncate the left side of the text.
+        for (var x = 2; x < txt.length; x++) {
+            if (t.getSubStringLength(x - 2, txt.length) <= w) {
+                t.textContent = ".." + txt.substring(x, txt.length);
+                return;
+            }
+        }
+    }
+    t.textContent = "";
+}
+// zoom
+function zoom_reset(e) {
+    if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * parseInt(e.attributes["fg:x"].value) / total_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / total_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_reset(c[i]);
+    }
+}
+function zoom_child(e, x, zoomed_width_samples) {
+    if (e.tagName == "text") {
+        var parent_x = parseFloat(find_child(e.parentNode, "rect[x]").attributes.x.value);
+        e.attributes.x.value = format_percent(parent_x + (100 * 3 / frames.attributes.width.value));
+    } else if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * (parseInt(e.attributes["fg:x"].value) - x) / zoomed_width_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / zoomed_width_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_child(c[i], x, zoomed_width_samples);
+    }
+}
+function zoom_parent(e) {
+    if (e.attributes) {
+        if (e.attributes.x != undefined) {
+            e.attributes.x.value = "0.0%";
+        }
+        if (e.attributes.width != undefined) {
+            e.attributes.width.value = "100.0%";
+        }
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_parent(c[i]);
+    }
+}
+function zoom(node) {
+    var attr = find_child(node, "rect").attributes;
+    var width = parseInt(attr["fg:w"].value);
+    var xmin = parseInt(attr["fg:x"].value);
+    var xmax = xmin + width;
+    var ymin = parseFloat(attr.y.value);
+    unzoombtn.classList.remove("hide");
+    var el = frames.children;
+    var to_update_text = [];
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        var a = find_child(e, "rect").attributes;
+        var ex = parseInt(a["fg:x"].value);
+        var ew = parseInt(a["fg:w"].value);
+        // Is it an ancestor
+        if (!inverted) {
+            var upstack = parseFloat(a.y.value) > ymin;
+        } else {
+            var upstack = parseFloat(a.y.value) < ymin;
+        }
+        if (upstack) {
+            // Direct ancestor
+            if (ex <= xmin && (ex+ew) >= xmax) {
+                e.classList.add("parent");
+                zoom_parent(e);
+                to_update_text.push(e);
+            }
+            // not in current path
+            else
+                e.classList.add("hide");
+        }
+        // Children maybe
+        else {
+            // no common path
+            if (ex < xmin || ex >= xmax) {
+                e.classList.add("hide");
+            }
+            else {
+                zoom_child(e, xmin, width);
+                to_update_text.push(e);
+            }
+        }
+    }
+    update_text_for_elements(to_update_text);
+}
+function unzoom() {
+    unzoombtn.classList.add("hide");
+    var el = frames.children;
+    for(var i = 0; i < el.length; i++) {
+        el[i].classList.remove("parent");
+        el[i].classList.remove("hide");
+        zoom_reset(el[i]);
+    }
+    update_text_for_elements(el);
+}
+// search
+function reset_search() {
+    var el = document.querySelectorAll("#frames rect");
+    for (var i = 0; i < el.length; i++) {
+        orig_load(el[i], "fill")
+    }
+    var params = get_params();
+    delete params.s;
+    history.replaceState(null, null, parse_params(params));
+}
+function search_prompt() {
+    if (!searching) {
+        var term = prompt("Enter a search term (regexp " +
+            "allowed, eg: ^ext4_)", "");
+        if (term != null) {
+            search(term)
+        }
+    } else {
+        reset_search();
+        searching = 0;
+        searchbtn.classList.remove("show");
+        searchbtn.firstChild.nodeValue = "Search"
+        matchedtxt.classList.add("hide");
+        matchedtxt.firstChild.nodeValue = ""
+    }
+}
+function search(term) {
+    var re = new RegExp(term);
+    var el = frames.children;
+    var matches = new Object();
+    var maxwidth = 0;
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        // Skip over frames which are either not visible, or below the zoomed-to frame
+        if (e.classList.contains("hide") || e.classList.contains("parent")) {
+            continue;
+        }
+        var func = g_to_func(e);
+        var rect = find_child(e, "rect");
+        if (func == null || rect == null)
+            continue;
+        // Save max width. Only works as we have a root frame
+        var w = parseInt(rect.attributes["fg:w"].value);
+        if (w > maxwidth)
+            maxwidth = w;
+        if (func.match(re)) {
+            // highlight
+            var x = parseInt(rect.attributes["fg:x"].value);
+            orig_save(rect, "fill");
+            rect.attributes.fill.value = searchcolor;
+            // remember matches
+            if (matches[x] == undefined) {
+                matches[x] = w;
+            } else {
+                if (w > matches[x]) {
+                    // overwrite with parent
+                    matches[x] = w;
+                }
+            }
+            searching = 1;
+        }
+    }
+    if (!searching)
+        return;
+    var params = get_params();
+    params.s = term;
+    history.replaceState(null, null, parse_params(params));
+
+    searchbtn.classList.add("show");
+    searchbtn.firstChild.nodeValue = "Reset Search";
+    // calculate percent matched, excluding vertical overlap
+    var count = 0;
+    var lastx = -1;
+    var lastw = 0;
+    var keys = Array();
+    for (k in matches) {
+        if (matches.hasOwnProperty(k))
+            keys.push(k);
+    }
+    // sort the matched frames by their x location
+    // ascending, then width descending
+    keys.sort(function(a, b){
+        return a - b;
+    });
+    // Step through frames saving only the biggest bottom-up frames
+    // thanks to the sort order. This relies on the tree property
+    // where children are always smaller than their parents.
+    for (var k in keys) {
+        var x = parseInt(keys[k]);
+        var w = matches[keys[k]];
+        if (x >= lastx + lastw) {
+            count += w;
+            lastx = x;
+            lastw = w;
+        }
+    }
+    // display matched percent
+    matchedtxt.classList.remove("hide");
+    var pct = 100 * count / maxwidth;
+    if (pct != 100) pct = pct.toFixed(1);
+    matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+}
+function format_percent(n) {
+    return n.toFixed(4) + "%";
+}
+]]></script><rect x="0" y="0" width="100%" height="374" fill="url(#background)"/><text id="title" fill="rgb(0,0,0)" x="50.0000%" y="24.00">Flame Graph</text><text id="details" fill="rgb(0,0,0)" x="10" y="357.00"> </text><text id="unzoom" class="hide" fill="rgb(0,0,0)" x="10" y="24.00">Reset Zoom</text><text id="search" fill="rgb(0,0,0)" x="1190" y="24.00">Search</text><text id="matched" fill="rgb(0,0,0)" x="1190" y="357.00"> </text><svg id="frames" x="10" width="1180" total_samples="2189765"><g><title>&lt;absim::EventQueue&lt;S&gt; as absim::Enqueue&lt;S&gt;&gt;::enqueue (5,455 samples, 0.25%)</title><rect x="0.6507%" y="149" width="0.2491%" height="15" fill="rgb(252,114,16)" fg:x="14249" fg:w="5455"/><text x="0.9007%" y="159.50"></text></g><g><title>&lt;briolette_sim::EventData as core::clone::Clone&gt;::clone (5,455 samples, 0.25%)</title><rect x="0.6507%" y="133" width="0.2491%" height="15" fill="rgb(254,151,24)" fg:x="14249" fg:w="5455"/><text x="0.9007%" y="143.50"></text></g><g><title>&lt;briolette_sim::AgentData as core::clone::Clone&gt;::clone (5,454 samples, 0.25%)</title><rect x="0.6508%" y="117" width="0.2491%" height="15" fill="rgb(253,54,39)" fg:x="14250" fg:w="5454"/><text x="0.9008%" y="127.50"></text></g><g><title>&lt;alloc::vec::Vec&lt;T,A&gt; as core::clone::Clone&gt;::clone (5,451 samples, 0.25%)</title><rect x="0.6509%" y="101" width="0.2489%" height="15" fill="rgb(243,25,45)" fg:x="14253" fg:w="5451"/><text x="0.9009%" y="111.50"></text></g><g><title>&lt;briolette_sim::Coin as core::clone::Clone&gt;::clone (1,414 samples, 0.06%)</title><rect x="0.8352%" y="85" width="0.0646%" height="15" fill="rgb(234,134,9)" fg:x="18290" fg:w="1414"/><text x="1.0852%" y="95.50"></text></g><g><title>&lt;briolette_sim::EventData as core::clone::Clone&gt;::clone (3,492 samples, 0.16%)</title><rect x="1.6346%" y="85" width="0.1595%" height="15" fill="rgb(227,166,31)" fg:x="35793" fg:w="3492"/><text x="1.8846%" y="95.50"></text></g><g><title>&lt;alloc::vec::Vec&lt;T,A&gt; as core::clone::Clone&gt;::clone (3,055 samples, 0.14%)</title><rect x="1.6545%" y="69" width="0.1395%" height="15" fill="rgb(245,143,41)" fg:x="36230" fg:w="3055"/><text x="1.9045%" y="79.50"></text></g><g><title>&lt;briolette_sim::Coin as core::clone::Clone&gt;::clone (994 samples, 0.05%)</title><rect x="1.7486%" y="53" width="0.0454%" height="15" fill="rgb(238,181,32)" fg:x="38291" fg:w="994"/><text x="1.9986%" y="63.50"></text></g><g><title>&lt;absim::EventQueue&lt;S&gt; as absim::Enqueue&lt;S&gt;&gt;::enqueue (3,705 samples, 0.17%)</title><rect x="1.6249%" y="101" width="0.1692%" height="15" fill="rgb(224,113,18)" fg:x="35581" fg:w="3705"/><text x="1.8749%" y="111.50"></text></g><g><title>&lt;briolette_sim::EventData as core::clone::Clone&gt;::clone (2,474 samples, 0.11%)</title><rect x="1.7941%" y="101" width="0.1130%" height="15" fill="rgb(240,229,28)" fg:x="39286" fg:w="2474"/><text x="2.0441%" y="111.50"></text></g><g><title>&lt;alloc::vec::Vec&lt;T,A&gt; as core::clone::Clone&gt;::clone (2,185 samples, 0.10%)</title><rect x="1.8073%" y="85" width="0.0998%" height="15" fill="rgb(250,185,3)" fg:x="39575" fg:w="2185"/><text x="2.0573%" y="95.50"></text></g><g><title>&lt;briolette_sim::Coin as core::clone::Clone&gt;::clone (942 samples, 0.04%)</title><rect x="1.8640%" y="69" width="0.0430%" height="15" fill="rgb(212,59,25)" fg:x="40818" fg:w="942"/><text x="2.1140%" y="79.50"></text></g><g><title>&lt;briolette_sim::SimulatorHelpers as briolette_sim::SimulationTools&gt;::probability_check (1,032 samples, 0.05%)</title><rect x="1.9071%" y="101" width="0.0471%" height="15" fill="rgb(221,87,20)" fg:x="41760" fg:w="1032"/><text x="2.1571%" y="111.50"></text></g><g><title>rand_chacha::guts::refill_wide::impl_avx2 (300 samples, 0.01%)</title><rect x="1.9405%" y="85" width="0.0137%" height="15" fill="rgb(213,74,28)" fg:x="42492" fg:w="300"/><text x="2.1905%" y="95.50"></text></g><g><title>&lt;briolette_sim::Statistics as core::cmp::PartialEq&gt;::eq (284 samples, 0.01%)</title><rect x="1.9542%" y="101" width="0.0130%" height="15" fill="rgb(224,132,34)" fg:x="42792" fg:w="284"/><text x="2.2042%" y="111.50"></text></g><g><title>&lt;absim::EventQueue&lt;S&gt; as absim::Enqueue&lt;S&gt;&gt;::enqueue (6,917 samples, 0.32%)</title><rect x="4.5825%" y="85" width="0.3159%" height="15" fill="rgb(222,101,24)" fg:x="100347" fg:w="6917"/><text x="4.8325%" y="95.50"></text></g><g><title>&lt;briolette_sim::EventData as core::clone::Clone&gt;::clone (6,690 samples, 0.31%)</title><rect x="4.5929%" y="69" width="0.3055%" height="15" fill="rgb(254,142,4)" fg:x="100574" fg:w="6690"/><text x="4.8429%" y="79.50"></text></g><g><title>&lt;alloc::vec::Vec&lt;T,A&gt; as core::clone::Clone&gt;::clone (5,248 samples, 0.24%)</title><rect x="4.6588%" y="53" width="0.2397%" height="15" fill="rgb(230,229,49)" fg:x="102016" fg:w="5248"/><text x="4.9088%" y="63.50"></text></g><g><title>&lt;briolette_sim::Coin as core::clone::Clone&gt;::clone (1,803 samples, 0.08%)</title><rect x="4.8161%" y="37" width="0.0823%" height="15" fill="rgb(238,70,47)" fg:x="105461" fg:w="1803"/><text x="5.0661%" y="47.50"></text></g><g><title>alloc::raw_vec::RawVec&lt;T,A&gt;::grow_one (3,482 samples, 0.16%)</title><rect x="4.8992%" y="85" width="0.1590%" height="15" fill="rgb(231,160,17)" fg:x="107281" fg:w="3482"/><text x="5.1492%" y="95.50"></text></g><g><title>alloc::raw_vec::finish_grow (2,079 samples, 0.09%)</title><rect x="4.9633%" y="69" width="0.0949%" height="15" fill="rgb(218,68,53)" fg:x="108684" fg:w="2079"/><text x="5.2133%" y="79.50"></text></g><g><title>__rdl_realloc (652 samples, 0.03%)</title><rect x="5.0284%" y="53" width="0.0298%" height="15" fill="rgb(236,111,10)" fg:x="110111" fg:w="652"/><text x="5.2784%" y="63.50"></text></g><g><title>core::ptr::drop_in_place&lt;briolette_sim::EventData&gt; (654 samples, 0.03%)</title><rect x="5.0582%" y="85" width="0.0299%" height="15" fill="rgb(224,34,41)" fg:x="110763" fg:w="654"/><text x="5.3082%" y="95.50"></text></g><g><title>__rdl_dealloc (271 samples, 0.01%)</title><rect x="5.0757%" y="69" width="0.0124%" height="15" fill="rgb(241,118,19)" fg:x="111146" fg:w="271"/><text x="5.3257%" y="79.50"></text></g><g><title>briolette_sim::simulator::Simulator::do_transaction (68,821 samples, 3.14%)</title><rect x="1.9677%" y="101" width="3.1428%" height="15" fill="rgb(238,129,25)" fg:x="43087" fg:w="68821"/><text x="2.2177%" y="111.50">bri..</text></g><g><title>rand_chacha::guts::refill_wide::impl_avx2 (404 samples, 0.02%)</title><rect x="5.0921%" y="85" width="0.0184%" height="15" fill="rgb(238,22,31)" fg:x="111504" fg:w="404"/><text x="5.3421%" y="95.50"></text></g><g><title>core::ptr::drop_in_place&lt;briolette_sim::EventData&gt; (272 samples, 0.01%)</title><rect x="5.1126%" y="101" width="0.0124%" height="15" fill="rgb(222,174,48)" fg:x="111954" fg:w="272"/><text x="5.3626%" y="111.50"></text></g><g><title>hashbrown::map::HashMap&lt;K,V,S,A&gt;::get_inner (395 samples, 0.02%)</title><rect x="5.1307%" y="101" width="0.0180%" height="15" fill="rgb(206,152,40)" fg:x="112350" fg:w="395"/><text x="5.3807%" y="111.50"></text></g><g><title>rand_chacha::guts::refill_wide (375 samples, 0.02%)</title><rect x="9.0066%" y="85" width="0.0171%" height="15" fill="rgb(218,99,54)" fg:x="197223" fg:w="375"/><text x="9.2566%" y="95.50"></text></g><g><title>rand::seq::IteratorRandom::choose (98,733 samples, 4.51%)</title><rect x="5.1576%" y="101" width="4.5088%" height="15" fill="rgb(220,174,26)" fg:x="112939" fg:w="98733"/><text x="5.4076%" y="111.50">rand:..</text></g><g><title>rand_chacha::guts::refill_wide::impl_avx2 (14,074 samples, 0.64%)</title><rect x="9.0237%" y="85" width="0.6427%" height="15" fill="rgb(245,116,9)" fg:x="197598" fg:w="14074"/><text x="9.2737%" y="95.50"></text></g><g><title>&lt;briolette_sim::simulator::Simulator as absim::Simulation&gt;::generate (181,833 samples, 8.30%)</title><rect x="1.3810%" y="117" width="8.3038%" height="15" fill="rgb(209,72,35)" fg:x="30240" fg:w="181833"/><text x="1.6310%" y="127.50">&lt;briolette_s..</text></g><g><title>rand_flight::Flight&lt;R,RD,T,_&gt;::step_graph (401 samples, 0.02%)</title><rect x="9.6664%" y="101" width="0.0183%" height="15" fill="rgb(226,126,21)" fg:x="211672" fg:w="401"/><text x="9.9164%" y="111.50"></text></g><g><title>&lt;absim::clients::LocalSimulationClient&lt;S&gt; as absim::SimulationClient&lt;S&gt;&gt;::run (182,234 samples, 8.32%)</title><rect x="1.3646%" y="133" width="8.3221%" height="15" fill="rgb(227,192,1)" fg:x="29881" fg:w="182234"/><text x="1.6146%" y="143.50">&lt;absim::clie..</text></g><g><title>&lt;alloc::vec::Vec&lt;T,A&gt; as core::clone::Clone&gt;::clone (1,355 samples, 0.06%)</title><rect x="92.9097%" y="117" width="0.0619%" height="15" fill="rgb(237,180,29)" fg:x="2034504" fg:w="1355"/><text x="93.1597%" y="127.50"></text></g><g><title>&lt;alloc::vec::Vec&lt;T&gt; as alloc::vec::spec_from_iter::SpecFromIter&lt;T,I&gt;&gt;::from_iter (7,612 samples, 0.35%)</title><rect x="92.9716%" y="117" width="0.3476%" height="15" fill="rgb(230,197,35)" fg:x="2035859" fg:w="7612"/><text x="93.2216%" y="127.50"></text></g><g><title>core::ops::function::impls::&lt;impl core::ops::function::FnMut&lt;A&gt; for &amp;mut F&gt;::call_mut (4,245 samples, 0.19%)</title><rect x="93.1253%" y="101" width="0.1939%" height="15" fill="rgb(246,193,31)" fg:x="2039226" fg:w="4245"/><text x="93.3753%" y="111.50"></text></g><g><title>&lt;briolette_sim::Statistics as core::cmp::PartialEq&gt;::eq (1,133 samples, 0.05%)</title><rect x="93.3192%" y="117" width="0.0517%" height="15" fill="rgb(241,36,4)" fg:x="2043471" fg:w="1133"/><text x="93.5692%" y="127.50"></text></g><g><title>alloc::raw_vec::RawVec&lt;T,A&gt;::grow_one (814 samples, 0.04%)</title><rect x="93.3781%" y="117" width="0.0372%" height="15" fill="rgb(241,130,17)" fg:x="2044761" fg:w="814"/><text x="93.6281%" y="127.50"></text></g><g><title>alloc::raw_vec::finish_grow (501 samples, 0.02%)</title><rect x="93.3924%" y="101" width="0.0229%" height="15" fill="rgb(206,137,32)" fg:x="2045074" fg:w="501"/><text x="93.6424%" y="111.50"></text></g><g><title>core::ptr::drop_in_place&lt;absim::Event&lt;briolette_sim::EventData&gt;&gt; (403 samples, 0.02%)</title><rect x="93.4169%" y="117" width="0.0184%" height="15" fill="rgb(237,228,51)" fg:x="2045610" fg:w="403"/><text x="93.6669%" y="127.50"></text></g><g><title>core::ptr::drop_in_place&lt;absim::graph_utils::SimulationGraph&gt; (278 samples, 0.01%)</title><rect x="93.4353%" y="117" width="0.0127%" height="15" fill="rgb(243,6,42)" fg:x="2046013" fg:w="278"/><text x="93.6853%" y="127.50"></text></g><g><title>core::ptr::drop_in_place&lt;briolette_sim::Statistics&gt; (358 samples, 0.02%)</title><rect x="93.4487%" y="117" width="0.0163%" height="15" fill="rgb(251,74,28)" fg:x="2046307" fg:w="358"/><text x="93.6987%" y="127.50"></text></g><g><title>&lt;briolette_sim::simulator::Simulator as absim::Simulation&gt;::apply (1,834,660 samples, 83.78%)</title><rect x="9.6867%" y="133" width="83.7834%" height="15" fill="rgb(218,20,49)" fg:x="212115" fg:w="1834660"/><text x="9.9367%" y="143.50">&lt;briolette_sim::simulator::Simulator as absim::Simulation&gt;::apply</text></g><g><title>&lt;briolette_sim::AgentData as core::clone::Clone&gt;::clone (7,554 samples, 0.34%)</title><rect x="93.4709%" y="117" width="0.3450%" height="15" fill="rgb(238,28,14)" fg:x="2046792" fg:w="7554"/><text x="93.7209%" y="127.50"></text></g><g><title>&lt;alloc::vec::Vec&lt;T,A&gt; as core::clone::Clone&gt;::clone (7,545 samples, 0.34%)</title><rect x="93.4713%" y="101" width="0.3446%" height="15" fill="rgb(229,40,46)" fg:x="2046801" fg:w="7545"/><text x="93.7213%" y="111.50"></text></g><g><title>&lt;briolette_sim::Coin as core::clone::Clone&gt;::clone (1,474 samples, 0.07%)</title><rect x="93.7485%" y="85" width="0.0673%" height="15" fill="rgb(244,195,20)" fg:x="2052872" fg:w="1474"/><text x="93.9985%" y="95.50"></text></g><g><title>&lt;briolette_sim::simulator::Simulator as absim::Simulation&gt;::population_apply (7,691 samples, 0.35%)</title><rect x="93.4701%" y="133" width="0.3512%" height="15" fill="rgb(253,56,35)" fg:x="2046775" fg:w="7691"/><text x="93.7201%" y="143.50"></text></g><g><title>&lt;alloc::vec::Vec&lt;T&gt; as alloc::vec::spec_from_iter::SpecFromIter&lt;T,I&gt;&gt;::from_iter (536 samples, 0.02%)</title><rect x="95.0342%" y="117" width="0.0245%" height="15" fill="rgb(210,149,44)" fg:x="2081026" fg:w="536"/><text x="95.2842%" y="127.50"></text></g><g><title>core::hash::BuildHasher::hash_one (521 samples, 0.02%)</title><rect x="95.0614%" y="117" width="0.0238%" height="15" fill="rgb(240,135,12)" fg:x="2081622" fg:w="521"/><text x="95.3114%" y="127.50"></text></g><g><title>&lt;briolette_sim::simulator::Simulator as absim::Simulation&gt;::world_apply (28,081 samples, 1.28%)</title><rect x="93.8213%" y="133" width="1.2824%" height="15" fill="rgb(251,24,50)" fg:x="2054466" fg:w="28081"/><text x="94.0713%" y="143.50"></text></g><g><title>hashbrown::map::HashMap&lt;K,V,S,A&gt;::insert (404 samples, 0.02%)</title><rect x="95.0852%" y="117" width="0.0184%" height="15" fill="rgb(243,200,47)" fg:x="2082143" fg:w="404"/><text x="95.3352%" y="127.50"></text></g><g><title>core::hash::BuildHasher::hash_one (254 samples, 0.01%)</title><rect x="95.0921%" y="101" width="0.0116%" height="15" fill="rgb(224,166,26)" fg:x="2082293" fg:w="254"/><text x="95.3421%" y="111.50"></text></g><g><title>core::hash::BuildHasher::hash_one (309 samples, 0.01%)</title><rect x="95.3440%" y="101" width="0.0141%" height="15" fill="rgb(233,0,47)" fg:x="2087809" fg:w="309"/><text x="95.5940%" y="111.50"></text></g><g><title>&lt;briolette_sim::simulator::Simulator as absim::Simulation&gt;::worldview (6,253 samples, 0.29%)</title><rect x="95.1037%" y="133" width="0.2856%" height="15" fill="rgb(253,80,5)" fg:x="2082547" fg:w="6253"/><text x="95.3537%" y="143.50"></text></g><g><title>hashbrown::map::HashMap&lt;K,V,S,A&gt;::insert (1,289 samples, 0.06%)</title><rect x="95.3304%" y="117" width="0.0589%" height="15" fill="rgb(214,133,25)" fg:x="2087511" fg:w="1289"/><text x="95.5804%" y="127.50"></text></g><g><title>hashbrown::raw::RawTable&lt;T,A&gt;::reserve_rehash (682 samples, 0.03%)</title><rect x="95.3581%" y="101" width="0.0311%" height="15" fill="rgb(209,27,14)" fg:x="2088118" fg:w="682"/><text x="95.6081%" y="111.50"></text></g><g><title>core::hash::BuildHasher::hash_one (334 samples, 0.02%)</title><rect x="95.3740%" y="85" width="0.0153%" height="15" fill="rgb(219,102,51)" fg:x="2088466" fg:w="334"/><text x="95.6240%" y="95.50"></text></g><g><title>core::ptr::drop_in_place&lt;briolette_sim::AgentData&gt; (398 samples, 0.02%)</title><rect x="95.3923%" y="117" width="0.0182%" height="15" fill="rgb(237,18,16)" fg:x="2088868" fg:w="398"/><text x="95.6423%" y="127.50"></text></g><g><title>core::ptr::drop_in_place&lt;briolette_sim::EventData&gt; (2,485 samples, 0.11%)</title><rect x="95.4105%" y="117" width="0.1135%" height="15" fill="rgb(241,85,17)" fg:x="2089266" fg:w="2485"/><text x="95.6605%" y="127.50"></text></g><g><title>__rdl_dealloc (219 samples, 0.01%)</title><rect x="95.5140%" y="101" width="0.0100%" height="15" fill="rgb(236,90,42)" fg:x="2091532" fg:w="219"/><text x="95.7640%" y="111.50"></text></g><g><title>absim::EventQueue&lt;S&gt;::clear (5,042 samples, 0.23%)</title><rect x="95.3893%" y="133" width="0.2303%" height="15" fill="rgb(249,57,21)" fg:x="2088802" fg:w="5042"/><text x="95.6393%" y="143.50"></text></g><g><title>core::ptr::drop_in_place&lt;briolette_sim::Statistics&gt; (2,093 samples, 0.10%)</title><rect x="95.5240%" y="117" width="0.0956%" height="15" fill="rgb(243,12,36)" fg:x="2091751" fg:w="2093"/><text x="95.7740%" y="127.50"></text></g><g><title>&lt;std::io::Write::write_fmt::Adapter&lt;T&gt; as core::fmt::Write&gt;::write_str (1,119 samples, 0.05%)</title><rect x="95.6851%" y="85" width="0.0511%" height="15" fill="rgb(253,128,47)" fg:x="2095278" fg:w="1119"/><text x="95.9351%" y="95.50"></text></g><g><title>std::io::Write::write_all (812 samples, 0.04%)</title><rect x="95.6991%" y="69" width="0.0371%" height="15" fill="rgb(207,33,20)" fg:x="2095585" fg:w="812"/><text x="95.9491%" y="79.50"></text></g><g><title>&lt;std::fs::File as std::io::Write&gt;::write (322 samples, 0.01%)</title><rect x="95.7215%" y="53" width="0.0147%" height="15" fill="rgb(233,215,35)" fg:x="2096075" fg:w="322"/><text x="95.9715%" y="63.50"></text></g><g><title>&lt;std::io::Write::write_fmt::Adapter&lt;T&gt; as core::fmt::Write&gt;::write_str (1,146 samples, 0.05%)</title><rect x="95.7520%" y="69" width="0.0523%" height="15" fill="rgb(249,188,52)" fg:x="2096743" fg:w="1146"/><text x="96.0020%" y="79.50"></text></g><g><title>std::io::Write::write_all (831 samples, 0.04%)</title><rect x="95.7663%" y="53" width="0.0379%" height="15" fill="rgb(225,12,32)" fg:x="2097058" fg:w="831"/><text x="96.0163%" y="63.50"></text></g><g><title>&lt;std::fs::File as std::io::Write&gt;::write (309 samples, 0.01%)</title><rect x="95.7902%" y="37" width="0.0141%" height="15" fill="rgb(247,98,14)" fg:x="2097580" fg:w="309"/><text x="96.0402%" y="47.50"></text></g><g><title>&lt;absim::Manager&lt;S&gt; as absim::ManagerInterface&lt;S&gt;&gt;::run (2,078,441 samples, 94.92%)</title><rect x="0.8999%" y="149" width="94.9162%" height="15" fill="rgb(247,219,48)" fg:x="19706" fg:w="2078441"/><text x="1.1499%" y="159.50">&lt;absim::Manager&lt;S&gt; as absim::ManagerInterface&lt;S&gt;&gt;::run</text></g><g><title>briolette_sim::check_exit_conditions_and_print_results_to_file_avged_out (4,303 samples, 0.20%)</title><rect x="95.6196%" y="133" width="0.1965%" height="15" fill="rgb(253,60,48)" fg:x="2093844" fg:w="4303"/><text x="95.8696%" y="143.50"></text></g><g><title>std::io::Write::write_fmt (4,058 samples, 0.19%)</title><rect x="95.6308%" y="117" width="0.1853%" height="15" fill="rgb(245,15,52)" fg:x="2094089" fg:w="4058"/><text x="95.8808%" y="127.50"></text></g><g><title>core::fmt::write (3,850 samples, 0.18%)</title><rect x="95.6403%" y="101" width="0.1758%" height="15" fill="rgb(220,133,28)" fg:x="2094297" fg:w="3850"/><text x="95.8903%" y="111.50"></text></g><g><title>core::fmt::num::imp::&lt;impl core::fmt::Display for usize&gt;::fmt (1,750 samples, 0.08%)</title><rect x="95.7362%" y="85" width="0.0799%" height="15" fill="rgb(217,180,4)" fg:x="2096397" fg:w="1750"/><text x="95.9862%" y="95.50"></text></g><g><title>core::fmt::Formatter::pad_integral (258 samples, 0.01%)</title><rect x="95.8043%" y="69" width="0.0118%" height="15" fill="rgb(251,24,1)" fg:x="2097889" fg:w="258"/><text x="96.0543%" y="79.50"></text></g><g><title>&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (394 samples, 0.02%)</title><rect x="95.8161%" y="149" width="0.0180%" height="15" fill="rgb(212,185,49)" fg:x="2098147" fg:w="394"/><text x="96.0661%" y="159.50"></text></g><g><title>&lt;std::collections::hash::map::HashMap&lt;K,V,S&gt; as core::iter::traits::collect::FromIterator&lt;(K,V)&gt;&gt;::from_iter (85,926 samples, 3.92%)</title><rect x="95.8341%" y="149" width="3.9240%" height="15" fill="rgb(215,175,22)" fg:x="2098541" fg:w="85926"/><text x="96.0841%" y="159.50">&lt;std..</text></g><g><title>&lt;alloc::vec::into_iter::IntoIter&lt;T,A&gt; as core::iter::traits::iterator::Iterator&gt;::fold (85,926 samples, 3.92%)</title><rect x="95.8341%" y="133" width="3.9240%" height="15" fill="rgb(250,205,14)" fg:x="2098541" fg:w="85926"/><text x="96.0841%" y="143.50">&lt;all..</text></g><g><title>hashbrown::map::HashMap&lt;K,V,S,A&gt;::insert (60,889 samples, 2.78%)</title><rect x="96.9774%" y="117" width="2.7806%" height="15" fill="rgb(225,211,22)" fg:x="2123578" fg:w="60889"/><text x="97.2274%" y="127.50">ha..</text></g><g><title>core::hash::BuildHasher::hash_one (1,709 samples, 0.08%)</title><rect x="99.6800%" y="101" width="0.0780%" height="15" fill="rgb(251,179,42)" fg:x="2182758" fg:w="1709"/><text x="99.9300%" y="111.50"></text></g><g><title>&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (401 samples, 0.02%)</title><rect x="99.7397%" y="85" width="0.0183%" height="15" fill="rgb(208,216,51)" fg:x="2184066" fg:w="401"/><text x="99.9897%" y="95.50"></text></g><g><title>__rdl_dealloc (325 samples, 0.01%)</title><rect x="99.7808%" y="117" width="0.0148%" height="15" fill="rgb(235,36,11)" fg:x="2184965" fg:w="325"/><text x="100.0308%" y="127.50"></text></g><g><title>core::ptr::drop_in_place&lt;(usize,absim::Agent&lt;briolette_sim::AgentData&gt;)&gt; (670 samples, 0.03%)</title><rect x="99.7659%" y="133" width="0.0306%" height="15" fill="rgb(213,189,28)" fg:x="2184638" fg:w="670"/><text x="100.0159%" y="143.50"></text></g><g><title>core::ptr::drop_in_place&lt;absim::Manager&lt;briolette_sim::simulator::Simulator&gt;&gt; (4,774 samples, 0.22%)</title><rect x="99.7658%" y="149" width="0.2180%" height="15" fill="rgb(227,203,42)" fg:x="2184637" fg:w="4774"/><text x="100.0158%" y="159.50"></text></g><g><title>core::ptr::drop_in_place&lt;briolette_sim::WorldData&gt; (4,103 samples, 0.19%)</title><rect x="99.7965%" y="133" width="0.1874%" height="15" fill="rgb(244,72,36)" fg:x="2185308" fg:w="4103"/><text x="100.0465%" y="143.50"></text></g><g><title>&lt;hashbrown::raw::RawTable&lt;T,A&gt; as core::ops::drop::Drop&gt;::drop (4,103 samples, 0.19%)</title><rect x="99.7965%" y="117" width="0.1874%" height="15" fill="rgb(213,53,17)" fg:x="2185308" fg:w="4103"/><text x="100.0465%" y="127.50"></text></g><g><title>core::ptr::drop_in_place&lt;briolette_sim::AgentData&gt; (322 samples, 0.01%)</title><rect x="99.9838%" y="149" width="0.0147%" height="15" fill="rgb(207,167,3)" fg:x="2189411" fg:w="322"/><text x="100.2338%" y="159.50"></text></g><g><title>all (2,189,765 samples, 100%)</title><rect x="0.0000%" y="325" width="100.0000%" height="15" fill="rgb(216,98,30)" fg:x="0" fg:w="2189765"/><text x="0.2500%" y="335.50"></text></g><g><title>briolette-sim (2,189,765 samples, 100.00%)</title><rect x="0.0000%" y="309" width="100.0000%" height="15" fill="rgb(236,123,15)" fg:x="0" fg:w="2189765"/><text x="0.2500%" y="319.50">briolette-sim</text></g><g><title>_start (2,189,765 samples, 100.00%)</title><rect x="0.0000%" y="293" width="100.0000%" height="15" fill="rgb(248,81,50)" fg:x="0" fg:w="2189765"/><text x="0.2500%" y="303.50">_start</text></g><g><title>__libc_start_main_impl (2,189,765 samples, 100.00%)</title><rect x="0.0000%" y="277" width="100.0000%" height="15" fill="rgb(214,120,4)" fg:x="0" fg:w="2189765"/><text x="0.2500%" y="287.50">__libc_start_main_impl</text></g><g><title>__libc_start_call_main (2,189,765 samples, 100.00%)</title><rect x="0.0000%" y="261" width="100.0000%" height="15" fill="rgb(208,179,34)" fg:x="0" fg:w="2189765"/><text x="0.2500%" y="271.50">__libc_start_call_main</text></g><g><title>main (2,189,765 samples, 100.00%)</title><rect x="0.0000%" y="245" width="100.0000%" height="15" fill="rgb(227,140,7)" fg:x="0" fg:w="2189765"/><text x="0.2500%" y="255.50">main</text></g><g><title>std::rt::lang_start_internal (2,189,765 samples, 100.00%)</title><rect x="0.0000%" y="229" width="100.0000%" height="15" fill="rgb(214,22,6)" fg:x="0" fg:w="2189765"/><text x="0.2500%" y="239.50">std::rt::lang_start_internal</text></g><g><title>std::rt::lang_start::{{closure}} (2,189,765 samples, 100.00%)</title><rect x="0.0000%" y="213" width="100.0000%" height="15" fill="rgb(207,137,27)" fg:x="0" fg:w="2189765"/><text x="0.2500%" y="223.50">std::rt::lang_start::{{closure}}</text></g><g><title>std::sys::backtrace::__rust_begin_short_backtrace (2,189,765 samples, 100.00%)</title><rect x="0.0000%" y="197" width="100.0000%" height="15" fill="rgb(210,8,46)" fg:x="0" fg:w="2189765"/><text x="0.2500%" y="207.50">std::sys::backtrace::__rust_begin_short_backtrace</text></g><g><title>briolette_sim::main (2,189,765 samples, 100.00%)</title><rect x="0.0000%" y="181" width="100.0000%" height="15" fill="rgb(240,16,54)" fg:x="0" fg:w="2189765"/><text x="0.2500%" y="191.50">briolette_sim::main</text></g><g><title>briolette_sim::run_experiments (2,189,765 samples, 100.00%)</title><rect x="0.0000%" y="165" width="100.0000%" height="15" fill="rgb(211,209,29)" fg:x="0" fg:w="2189765"/><text x="0.2500%" y="175.50">briolette_sim::run_experiments</text></g></svg></svg>
