@@ -8,6 +8,29 @@ from datetime import datetime
 from utils import read_experiment_results
 
 
+def calculate_corrected_ratio(original_ratio, bad_to_good_ratio):
+    """
+    Calculate the corrected ratio of double spenders caught.
+    
+    Args:
+        original_ratio: The original ratio (double_spenders_revoked_total / total_people)
+        bad_to_good_ratio: The bad_to_good_agents_ratio used in split_population function
+    
+    Returns:
+        Corrected ratio (double_spenders_revoked_total / double_spenders_total)
+    """
+    if bad_to_good_ratio <= 0:
+        return 0.0
+    
+    # The original ratio is: caught / total_people
+    # We want: caught / double_spenders_total
+    # Since double_spenders_total = total_people * bad_actors_fraction
+    # Corrected ratio = (caught / total_people) / bad_actors_fraction = (caught / (total_people * bad_actors_fraction))
+    corrected_ratio = original_ratio / (bad_to_good_ratio / (1.0 + bad_to_good_ratio))
+    
+    return corrected_ratio
+
+
 def get_experiment_info(file_path):
     # Extract number of actors from filename
     # Looking for pattern like "50k" where the number represents thousands of actors
@@ -100,17 +123,23 @@ def plot_combined_threat_experiments(input_dir, output_dir):
             if exp_id in experiment_info:
                 area_type, ratio = experiment_info[exp_id]
                 label = f'{area_type} {ratio}'
+                bad_to_good_ratio = float(ratio)
             else:
                 label = f'Experiment {exp_id}'
+                bad_to_good_ratio = 0.1  # Default fallback
         else:
             label = 'unknown'
+            bad_to_good_ratio = 0.1  # Default fallback
         
         # Read experiment results
         _, _, _, _, ratio_of_double_spenders_caught, _, _, _, _ = read_experiment_results(file_path)
         
+        # Calculate corrected ratio
+        corrected_ratio = [calculate_corrected_ratio(ratio, bad_to_good_ratio) for ratio in ratio_of_double_spenders_caught]
+        
         # Plot the results
-        x_values = list(range(len(ratio_of_double_spenders_caught)))
-        plt.plot(x_values, ratio_of_double_spenders_caught, 
+        x_values = list(range(len(corrected_ratio)))
+        plt.plot(x_values, corrected_ratio, 
                 marker='o', linestyle='-', color=color, 
                 label=label, alpha=0.7, markersize=4)  # Smaller markers
     
@@ -122,17 +151,23 @@ def plot_combined_threat_experiments(input_dir, output_dir):
             if exp_id in experiment_info:
                 area_type, ratio = experiment_info[exp_id]
                 label = f'{area_type} {ratio}'
+                bad_to_good_ratio = float(ratio)
             else:
                 label = f'Experiment {exp_id}'
+                bad_to_good_ratio = 0.1  # Default fallback
         else:
             label = 'unknown'
+            bad_to_good_ratio = 0.1  # Default fallback
         
         # Read experiment results
         _, _, _, _, ratio_of_double_spenders_caught, _, _, _, _ = read_experiment_results(file_path)
         
+        # Calculate corrected ratio
+        corrected_ratio = [calculate_corrected_ratio(ratio, bad_to_good_ratio) for ratio in ratio_of_double_spenders_caught]
+        
         # Plot the results
-        x_values = list(range(len(ratio_of_double_spenders_caught)))
-        plt.plot(x_values, ratio_of_double_spenders_caught, 
+        x_values = list(range(len(corrected_ratio)))
+        plt.plot(x_values, corrected_ratio, 
                 marker='o', linestyle='-', color=color, 
                 label=label, alpha=0.7, markersize=4)  # Smaller markers
 
@@ -269,9 +304,11 @@ def plot_experiment_results(file_path, output_base_dir, input_dir):
         }
         ratio = ratio_map.get(exp_id, "Unknown")
         area_type = "Urban" if exp_id in [0, 1, 2, 3] else "Rural" if exp_id in [7, 8, 9, 10] else "Unknown"
+        bad_to_good_ratio = float(ratio) if ratio != "Unknown" else 0.1
     else:
         ratio = "Unknown"
         area_type = "Unknown"
+        bad_to_good_ratio = 0.1
 
     # Store the data for later plotting
     if not hasattr(plot_experiment_results, 'epoch_diff_data'):
@@ -311,10 +348,14 @@ def plot_experiment_results(file_path, output_base_dir, input_dir):
     plt.savefig(os.path.join(output_dir, 'counterfeit_ratio.png'), dpi=300)
     plt.close()
 
-    # Plot the float array
+    # Plot the float array with corrected ratio
     plt.figure(figsize=(8, 5))  # Smaller figure size
-    x_values = list(range(len(ratio_of_double_spenders_caught)))
-    plt.plot(x_values, ratio_of_double_spenders_caught, marker='o', linestyle='-', color='r', label='Ratio of double spenders caught', markersize=4)
+    
+    # Calculate corrected ratio
+    corrected_ratio = [calculate_corrected_ratio(ratio, bad_to_good_ratio) for ratio in ratio_of_double_spenders_caught]
+    
+    x_values = list(range(len(corrected_ratio)))
+    plt.plot(x_values, corrected_ratio, marker='o', linestyle='-', color='r', label='Ratio of double spenders caught', markersize=4)
     plt.xlabel("Simulation step (1 step = 1 hour)", fontsize=18)
     plt.ylabel("Ratio of double spenders caught", fontsize=18)
     plt.legend(fontsize=14)
