@@ -80,15 +80,16 @@ def plot_combined_threat_experiments(input_dir, output_dir):
     os.makedirs(output_dir, exist_ok=True)
 
     # Define experiment labels and ratios
+    # Convert malicious to honest ratio to malicious to total ratio
     experiment_info = {
-        0: ("Urban", "1.0"),
-        1: ("Urban", "0.5"),
-        2: ("Urban", "0.25"),
-        3: ("Urban", "0.1"),
-        7: ("Rural", "1.0"),
-        8: ("Rural", "0.5"),
-        9: ("Rural", "0.25"),
-        10: ("Rural", "0.1")
+        0: ("Urban", "1.0", 0.5),  # 1.0 malicious/honest = 0.5 malicious/total
+        1: ("Urban", "0.5", 0.333),  # 0.5 malicious/honest = 0.333 malicious/total
+        2: ("Urban", "0.25", 0.2),  # 0.25 malicious/honest = 0.2 malicious/total
+        3: ("Urban", "0.1", 0.091),  # 0.1 malicious/honest = 0.091 malicious/total
+        7: ("Rural", "1.0", 0.5),  # 1.0 malicious/honest = 0.5 malicious/total
+        8: ("Rural", "0.5", 0.333),  # 0.5 malicious/honest = 0.333 malicious/total
+        9: ("Rural", "0.25", 0.2),  # 0.25 malicious/honest = 0.2 malicious/total
+        10: ("Rural", "0.1", 0.091)  # 0.1 malicious/honest = 0.091 malicious/total
     }
     
     # Use a colormap for different experiments
@@ -105,24 +106,24 @@ def plot_combined_threat_experiments(input_dir, output_dir):
         if exp_id_match:
             exp_id = int(exp_id_match.group(1))
             if exp_id in experiment_info:
-                area_type, ratio = experiment_info[exp_id]
+                area_type, ratio, malicious_to_total_ratio = experiment_info[exp_id]
                 if area_type == "Urban":
-                    urban_files.append((file_path, float(ratio)))
+                    urban_files.append((file_path, float(ratio), malicious_to_total_ratio))
                 else:
-                    rural_files.append((file_path, float(ratio)))
+                    rural_files.append((file_path, float(ratio), malicious_to_total_ratio))
     
     # Sort files by threat level (ratio) in descending order
     urban_files.sort(key=lambda x: x[1], reverse=True)
     rural_files.sort(key=lambda x: x[1], reverse=True)
     
     # Plot urban files first
-    for (file_path, _), color in zip(urban_files, plt.cm.viridis(np.linspace(0, 0.5, len(urban_files)))):
+    for (file_path, _, malicious_to_total_ratio), color in zip(urban_files, plt.cm.viridis(np.linspace(0, 0.5, len(urban_files)))):
         exp_id_match = re.search(r'expid_(\d+)', file_path)
         if exp_id_match:
             exp_id = int(exp_id_match.group(1))
             if exp_id in experiment_info:
-                area_type, ratio = experiment_info[exp_id]
-                label = f'{area_type} {ratio}'
+                area_type, ratio, _ = experiment_info[exp_id]
+                label = f'{area_type} {malicious_to_total_ratio:.3f}'
                 bad_to_good_ratio = float(ratio)
             else:
                 label = f'Experiment {exp_id}'
@@ -144,13 +145,13 @@ def plot_combined_threat_experiments(input_dir, output_dir):
                 label=label, alpha=0.7, markersize=4)  # Smaller markers
     
     # Plot rural files
-    for (file_path, _), color in zip(rural_files, plt.cm.viridis(np.linspace(0.5, 1, len(rural_files)))):
+    for (file_path, _, malicious_to_total_ratio), color in zip(rural_files, plt.cm.viridis(np.linspace(0.5, 1, len(rural_files)))):
         exp_id_match = re.search(r'expid_(\d+)', file_path)
         if exp_id_match:
             exp_id = int(exp_id_match.group(1))
             if exp_id in experiment_info:
-                area_type, ratio = experiment_info[exp_id]
-                label = f'{area_type} {ratio}'
+                area_type, ratio, _ = experiment_info[exp_id]
+                label = f'{area_type} {malicious_to_total_ratio:.3f}'
                 bad_to_good_ratio = float(ratio)
             else:
                 label = f'Experiment {exp_id}'
@@ -190,13 +191,13 @@ def plot_combined_threat_experiments(input_dir, output_dir):
     plt.figure(figsize=(10, 7))  # Smaller figure size for conference paper
     
     # Plot urban files first
-    for (file_path, _), color in zip(urban_files, plt.cm.viridis(np.linspace(0, 0.5, len(urban_files)))):
+    for (file_path, _, malicious_to_total_ratio), color in zip(urban_files, plt.cm.viridis(np.linspace(0, 0.5, len(urban_files)))):
         exp_id_match = re.search(r'expid_(\d+)', file_path)
         if exp_id_match:
             exp_id = int(exp_id_match.group(1))
             if exp_id in experiment_info:
-                area_type, ratio = experiment_info[exp_id]
-                label = f'{area_type} {ratio}'
+                area_type, ratio, _ = experiment_info[exp_id]
+                label = f'{area_type} {malicious_to_total_ratio:.3f}'
             else:
                 label = f'Experiment {exp_id}'
         else:
@@ -212,13 +213,13 @@ def plot_combined_threat_experiments(input_dir, output_dir):
                 label=label, alpha=0.7, markersize=4)  # Smaller markers
     
     # Plot rural files
-    for (file_path, _), color in zip(rural_files, plt.cm.viridis(np.linspace(0.5, 1, len(rural_files)))):
+    for (file_path, _, malicious_to_total_ratio), color in zip(rural_files, plt.cm.viridis(np.linspace(0.5, 1, len(rural_files)))):
         exp_id_match = re.search(r'expid_(\d+)', file_path)
         if exp_id_match:
             exp_id = int(exp_id_match.group(1))
             if exp_id in experiment_info:
-                area_type, ratio = experiment_info[exp_id]
-                label = f'{area_type} {ratio}'
+                area_type, ratio, _ = experiment_info[exp_id]
+                label = f'{area_type} {malicious_to_total_ratio:.3f}'
             else:
                 label = f'Experiment {exp_id}'
         else:

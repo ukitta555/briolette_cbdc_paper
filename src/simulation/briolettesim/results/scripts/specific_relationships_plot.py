@@ -19,10 +19,12 @@ def plot_counterfeit_vs_malicious(results, output_dir):
     for result in results:
         # Get the last value for double spent ratio
         double_spent = result['double_spent_means'][-1]
-        # Get the ratio parameter (index 3 in params)
-        ratio = result['params'][3]
+        # Get the ratio parameter (index 3 in params) - this is malicious to honest ratio
+        malicious_to_honest_ratio = result['params'][3]
+        # Convert to malicious to total ratio
+        malicious_to_total_ratio = malicious_to_honest_ratio / (1 + malicious_to_honest_ratio)
         
-        ratios.append(ratio)
+        ratios.append(malicious_to_total_ratio)
         double_spents.append(double_spent)
         
     plt.scatter(ratios, double_spents, alpha=0.2, s=50, color='tab:blue')  # Using specified hex color
@@ -35,7 +37,7 @@ def plot_counterfeit_vs_malicious(results, output_dir):
     x_range = np.linspace(min(ratios), max(ratios), 100)
     plt.plot(x_range, p(x_range), "r--", alpha=0.8, linewidth=5.0)
     
-    plt.xlabel("Malicious to Honest Ratio", fontsize=26)
+    plt.xlabel("Malicious to Total Ratio", fontsize=26)
     plt.ylabel("Counterfeit", fontsize=26)
     plt.grid(True)
     plt.xticks(fontsize=22)
@@ -108,17 +110,22 @@ def plot_spenders_caught_vs_ratio(results, output_dir, results_dir):
     # Collect data points for regression
     ratios = []
     spenders_caught = []
+    original_ratios = []
     
     for result in results:
         # Get the last value for spenders caught
         caught = result['spenders_caught_means'][-1]
-        # Get the ratio parameter (index 3 in params)
-        ratio = result['params'][3]
+        # Get the ratio parameter (index 3 in params) - this is malicious to honest ratio
+        malicious_to_honest_ratio = result['params'][3]
+        # Convert to malicious to total ratio
+        malicious_to_total_ratio = malicious_to_honest_ratio / (1 + malicious_to_honest_ratio)
         
-        ratios.append(ratio)
+        original_ratio = result['params'][3]
+        original_ratios.append(original_ratio)
+        ratios.append(malicious_to_total_ratio)
         spenders_caught.append(caught)
         
-        actual_ratio_of_spenders_caught = [spenders_caught[idx] / (el / (1 + el)) for idx, el in enumerate(ratios)]
+        actual_ratio_of_spenders_caught = [spenders_caught[idx] / (el / (1 + el)) for idx, el in enumerate(original_ratios)]
 
     plt.scatter(ratios, actual_ratio_of_spenders_caught, alpha=0.2, s=50, color='tab:blue')
     
@@ -130,7 +137,7 @@ def plot_spenders_caught_vs_ratio(results, output_dir, results_dir):
     x_range = np.linspace(min(ratios), max(ratios), 100)
     plt.plot(x_range, p(x_range), "r--", alpha=0.8, linewidth=5.0)
     
-    plt.xlabel("Malicious to Honest Ratio", fontsize=26)
+    plt.xlabel("Malicious to Total Ratio", fontsize=26)
     plt.ylabel("Ratio of Spenders Caught", fontsize=26)
     plt.grid(True)
     plt.xticks(fontsize=22)
@@ -292,12 +299,13 @@ def main():
         })
     
     # Generate plots
+
+    plot_spenders_caught_vs_ratio(results, output_dir, args.results_dir)
+    print("Plotted spenders caught vs ratio")
     plot_counterfeit_vs_malicious(results, output_dir)
     print("Plotted counterfeit vs malicious")
     plot_global_local_vs_p2p(results, output_dir)
     print("Plotted global-local vs p2p")
-    plot_spenders_caught_vs_ratio(results, output_dir, args.results_dir)
-    print("Plotted spenders caught vs ratio")
 
 if __name__ == "__main__":
     main() 

@@ -25,13 +25,17 @@ def plot_input_output_relationships(results, time_step=-1, output_dir='plots'):
     plt.figure(figsize=(24, 20))
     
     input_names = ['Move Probability', 'P2P Probability', 
-                   'P2M Probability', 'Ratio Double Spenders to Honest']
+                   'P2M Probability', 'Ratio Double Spenders to Total']
     
     print("len of double spent means", len(results[0]['double_spent_means']))
     # Plot relationships for double spent ratio
     for i, input_name in enumerate(input_names):
         plt.subplot(4, 3, 3*i + 1)
-        x = [result['params'][i] for result in results]
+        # Convert malicious to honest ratio to malicious to total ratio for the fourth parameter
+        if i == 3:  # Ratio Double Spenders to Total
+            x = [result['params'][i] / (1 + result['params'][i]) for result in results]
+        else:
+            x = [result['params'][i] for result in results]
         y = [result['double_spent_means'][time_step] for result in results]
         
         # Calculate correlation coefficient and p-value
@@ -54,8 +58,11 @@ def plot_input_output_relationships(results, time_step=-1, output_dir='plots'):
         
         # Plot relationships for spenders caught ratio
         plt.subplot(4, 3, 3*i + 2)
-        # y = [result['spenders_caught_means'][time_step] / (result['params'][0] * result['params'][1] * result['params'][2]) for result in results]
-        
+        # Convert malicious to honest ratio to malicious to total ratio for the fourth parameter
+        if i == 3:  # Ratio Double Spenders to Total
+            x = [result['params'][i] / (1 + result['params'][i]) for result in results]
+        else:
+            x = [result['params'][i] for result in results]
         
         y = [result['spenders_caught_means'][time_step]  for result in results]
 
@@ -94,7 +101,11 @@ def plot_input_output_relationships(results, time_step=-1, output_dir='plots'):
 
         # Plot relationships for global-local mean
         plt.subplot(4, 3, 3*i + 3)
-        x = [result['params'][i] for result in results]
+        # Convert malicious to honest ratio to malicious to total ratio for the fourth parameter
+        if i == 3:  # Ratio Double Spenders to Total
+            x = [result['params'][i] / (1 + result['params'][i]) for result in results]
+        else:
+            x = [result['params'][i] for result in results]
         y = [result['diff_epoch_mean_mean'][time_step] for result in results]
         
         # Calculate correlation coefficient and p-value

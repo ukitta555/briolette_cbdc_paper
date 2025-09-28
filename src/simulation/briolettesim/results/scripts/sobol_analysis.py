@@ -31,7 +31,11 @@ def perform_sobol_analysis(results, output_dir=None, results_dir=None):
         spenders_caught_final = result['spenders_caught_means'][-1] if result['spenders_caught_means'] else 0
         epoch_diff_mean_final = result['diff_epoch_mean_mean'][-1] if result['diff_epoch_mean_mean'] else 0
         
-        X.append(result['params'])
+        # Convert malicious-to-honest ratio to malicious-to-total ratio for the fourth parameter
+        params = result['params'].copy()
+        params[3] = params[3] / (1 + params[3])  # Convert malicious/honest to malicious/total
+        
+        X.append(params)
         Y_double_spent.append(double_spent_final)
         Y_spenders_caught.append(spenders_caught_final)
         Y_epoch_diff_mean.append(epoch_diff_mean_final)
@@ -54,7 +58,7 @@ def perform_sobol_analysis(results, output_dir=None, results_dir=None):
             [0.05, 0.7],  # move_prob
             [0.1, 0.5],   # p2p_prob
             [0.1, 0.5],   # p2m_prob
-            [0.1, 7]      # ratio_double_spenders_to_honest
+            [0.091, 0.875]  # ratio_double_spenders_to_total (converted from [0.1, 7] malicious/honest)
         ],
         "outputs": [
             "ratio_of_double_spent_coins", 
@@ -78,7 +82,7 @@ def perform_sobol_analysis(results, output_dir=None, results_dir=None):
     
     # Epoch difference mean
     print("\n--- Epoch Difference Mean ---")
-    sobol_indices_epoch_diff = analyze(problem, Y_epoch_diff_mean)
+    sobol_indices_epoch_diff = analyze(problem, Y_epoch_diff_mean, calc_second_order=True)
     print_sobol_results(sobol_indices_epoch_diff, problem['names'])
     
     # Plot first and total order indices
