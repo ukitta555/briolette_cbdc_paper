@@ -786,6 +786,7 @@ fn create_experiment_directory(experiment_type: &str, population_size: u64) -> i
 }
 
 fn main() -> io::Result<()> {
+    let start_time = SystemTime::now();
     let cli = Cli::parse();
 
     match cli.command {
@@ -1167,6 +1168,10 @@ fn main() -> io::Result<()> {
             run_experiments(experiments, population_size as u64, &experiment_dir)?;
         }
     }
+    
+    let end_time = SystemTime::now();
+    let duration = end_time.duration_since(start_time).unwrap();
+    println!("Total execution time: {:.2} seconds", duration.as_secs_f64());
     
     Ok(())
 }
