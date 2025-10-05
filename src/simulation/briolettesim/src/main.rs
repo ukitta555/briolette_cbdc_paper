@@ -795,7 +795,7 @@ fn main() -> io::Result<()> {
 
     match cli.command {
         Commands::Predefined => {
-            let population_size = 10000;
+            let population_size = 30000;
             let repeat_experiment_number_of_times = 1;
             let mut experiments: HashMap<usize, Vec<ExperimentConfig>> = HashMap::new();
             let experiment_dir = create_experiment_directory("predefined", population_size as u64)?;
@@ -1627,8 +1627,8 @@ fn run_experiments(
     let available_memory_mb = get_available_memory_mb();
     let cpu_cores = rayon::current_num_threads();
     
-    // Add 20% safety buffer to memory calculation
-    let max_safe_threads = ((available_memory_mb as f64 * 0.6) as u64 / memory_per_experiment_mb).max(1).min(cpu_cores as u64) as usize;
+    // Add 30% safety buffer to memory calculation
+    let max_safe_threads = ((available_memory_mb as f64 * 0.7) as u64 / memory_per_experiment_mb).max(1).min(cpu_cores as u64) as usize;
     
     // Use user-specified threads or calculate based on memory
     let max_threads = match max_threads {
