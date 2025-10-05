@@ -93,7 +93,7 @@ struct Coin {
 }
 
 // Used in the coin map to track counterfeiting impact
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
     struct CoinState {
         coin: Coin,
         revoked: Option<usize>, // Step of revocation
@@ -112,7 +112,7 @@ impl CoinState {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SyncState {
     id: usize,
     revocation: Vec<usize>, // list of agent ids for now.
@@ -120,25 +120,25 @@ pub struct SyncState {
     step: usize,            // Create at what step
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct TransactionCoin {
     coin: Coin,
     copy: bool,   // true to double spend
     popped: bool, // True if the coin has already been removed from the sender.
 }
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct TransactData {
     coins: Vec<TransactionCoin>, // double spending is literal this way.
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct EpochSampleStats {
     mean: f64,
     standard_deviation: f64,
     max_diff: usize
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct Statistics {
     potential_double_spender_max: usize,
     double_spenders_total: usize,
@@ -176,7 +176,7 @@ pub struct Statistics {
     double_spent_life_measurements: Vec<(usize, usize)>, // (epoch, life)
     #[serde(skip_serializing)]
     double_spent_txs_measurements: Vec<(usize, usize)>, // (epoch, txs)
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing)]  
     global_to_local_epoch_diffs: Vec<EpochSampleStats>,
     #[serde(skip_serializing)]
     std_local_epoch_diffs: Vec<f64>,
@@ -267,7 +267,6 @@ pub struct BankData {
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(rename_all = "lowercase")]
 pub enum AgentRole {
     Consumer(ConsumerData),
     Merchant(MerchantData),
@@ -300,8 +299,7 @@ impl Default for AgentRole {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(rename_all = "lowercase")]
+#[derive(PartialEq, Clone)]
 pub struct AgentData {
     location: GraphVertexIndex,
     registered: bool,
@@ -323,66 +321,65 @@ impl Default for AgentData {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct ResourceData {
     location: GraphVertexIndex,
     class: ResourceClass,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct PopulationAdd {
     data: AgentData,
     count: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct PopulationDel {
     ids: Vec<usize>, // Agent ids
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct RegisterData {}
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct SynchronizeData {}
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ValidateData {
     coins: Vec<Coin>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ValidateResponseData {
     ok: Vec<usize>,          // coin.id
     counterfeit: Vec<usize>, // coin.id
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct GossipData {
     // updates source and, optionally, a target with state. Should not clobber newer state.
     epoch: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct TrimData {
     coins: Vec<Coin>, // World updates; Agent self-trims
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct UpdateEpochData {
     revoked: usize, // Agent id.
 }
 
 // Must mirror AgentRoles
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, PartialEq, Clone)]
 pub enum RequestRole {
     Consumer,
     Merchant,
     Bank,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct RequestTransactionData {
     amount: usize,
     epoch: usize, // Since we can't see it during apply.
@@ -391,8 +388,7 @@ pub struct RequestTransactionData {
 }
 
 // Any event with World as a destination is a world event.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(rename_all = "lowercase")]
+#[derive(PartialEq, Clone)]
 pub enum EventData {
     // Agents
     Age(usize),
@@ -421,7 +417,6 @@ pub enum EventData {
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(rename_all = "lowercase")]
 pub enum SupportedDistributions {
     Uniform,
     Pareto,
@@ -588,7 +583,7 @@ impl SimulationTools for SimulatorHelpers {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct RngConfiguration {
     seed: u64,
     levy_min_step: f64,
@@ -618,7 +613,7 @@ impl RngConfiguration {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Clone)]
 pub struct WorldData {
     // World
     step: usize, // GlobalTick event
@@ -637,7 +632,7 @@ pub struct WorldData {
     ticket_refill: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ViewData {
     id: usize,
     step: usize, // GlobalTick event
@@ -657,15 +652,13 @@ pub struct NetworkData {
     online_distribution: SupportedDistributions,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct AgentConfiguration {
     class: AgentRole,
     count: usize,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ResourceClass {
     Network(NetworkData),
 }
@@ -675,8 +668,7 @@ impl Default for ResourceClass {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct ResourceConfiguration {
     class: ResourceClass,
     count: usize,
@@ -709,14 +701,14 @@ impl Configuration {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum ExperimentCategory {
     ThreatLevel,
     SyncParams,
     Sobol,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct ExperimentConfig {
     ratio_double_spenders_to_honest: f64,
     top_up_amount: usize,
@@ -736,26 +728,26 @@ pub struct ExperimentConfig {
     category: ExperimentCategory,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 enum Model {
     Urban,
     Rural,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 struct BarabasiConfig {
     size: usize,
     param: usize
 }
 
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 struct WattsConfig {
     size: usize,
     param: usize
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 enum GraphConfig {
     Watts(WattsConfig),
     Barabasi(BarabasiConfig),

@@ -186,7 +186,7 @@ impl<U> GridIndex<U> for Grid<U> {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct WorldData {
     // World
     step: usize, // GlobalTick event
@@ -195,7 +195,7 @@ pub struct WorldData {
     resources: Vec<ResourceData>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ViewData {
     id: usize,
     step: usize, // GlobalTick event

@@ -23,8 +23,7 @@ use fnv::{FnvHashMap, FnvBuildHasher};
 
 
 // TODO: Move out to examples or extras
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(bound = "S: Simulation")]
+#[derive(Debug, Clone)]
 pub struct SimulationPopulation<S>
 where
     S: Simulation,

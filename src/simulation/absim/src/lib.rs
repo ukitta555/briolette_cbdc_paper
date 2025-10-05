@@ -25,18 +25,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Range;
 
-pub trait SimulationData: Serialize + DeserializeOwned + Send + Sync + Clone {}
-impl<T> SimulationData for T where T: DeserializeOwned + Serialize + Send + Sync + Clone {}
+pub trait SimulationData: Send + Sync + Clone {}
+impl<T> SimulationData for T where T: Send + Sync + Clone {}
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(bound = "SD: SimulationData")]
+#[derive( Debug, PartialEq, Clone)]
 pub struct Agent<SD: SimulationData> {
     pub id: usize,
     pub data: SD,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Address<T> {
     NoAddress,
     AgentId(T),
@@ -66,8 +64,7 @@ impl<T> Address<T> {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(bound = "ED: SimulationData")]
+#[derive(PartialEq, Clone)]
 pub struct Event<ED: SimulationData> {
     pub id: usize,
     pub source: Address<usize>,
@@ -92,7 +89,7 @@ impl fmt::Display for PopulationError {
     }
 }
 
-pub trait Population<S: Simulation>: Serialize + DeserializeOwned + Send + Sync + Clone {
+pub trait Population<S: Simulation>: Send + Sync + Clone {
     fn new_agents(&mut self, data: &S::Data, num: usize);
     fn update(&mut self, agent: &Agent<S::Data>);
     // Proxies SliceRandom::choose
@@ -109,7 +106,7 @@ pub trait Population<S: Simulation>: Serialize + DeserializeOwned + Send + Sync 
     fn remove(&mut self, id: &usize);
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Clone)]
 pub struct EventQueue<S: Simulation> {
     agent: Vec<Event<S::Event>>, //FnvHashMap<usize, Vec<(u64, S::Event)>>,
     world: Vec<Event<S::Event>>,

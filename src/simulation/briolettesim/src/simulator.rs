@@ -31,10 +31,14 @@ impl Simulator {
             helper: Arc::new(RwLock::new(helper)),
         }
     }
-    // TODO add error handling
+   
+    
+    // Alternative version that accepts references directly to avoid cloning
     pub fn do_transaction(
         &self,
-        view: &ViewData,
+        step: usize,
+        epoch: usize,
+        epochs: &[SyncState],
         helper: &mut SimulatorHelpers,
         source: &Agent<AgentData>,
         target: &Agent<AgentData>,
@@ -49,7 +53,6 @@ impl Simulator {
         let txn_epoch = max(source.data.epoch, target.data.epoch);
         // Gossip here to ensure we're in sync.
         if source.data.epoch != target.data.epoch {
-            // println!("Source epoch: {}, target epoch: {}", source.data.epoch, target.data.epoch);
             queue.enqueue(
                 Address::AgentId(source.id),
                 Address::AgentId(target.id),
@@ -57,17 +60,11 @@ impl Simulator {
             );
             count += 1;
         }
-        // We check for revocation of the peer based on the max() of their epochs.
-        // While it is unlikely for a revoked party to share a revoked update, they shouldn't be
-        // able to share a secure epoch time that doesn't include updates because the time and
-        // hash/root hash must be linked.  If epochs don't need ordering, they can also just be
-        // signatures over hashes, but we'd need to figure out how deltas apply then, etc.
-        //
-        // We also check if either is revoked now, pretended the receiving agent has vetted and
-        // rejected.  This avoids doing rejections in the apply() phase.
-        assert!(txn_epoch <= view.epoch);
+        
+        // Check for revocation based on the max() of their epochs
+        assert!(txn_epoch <= epoch);
         let mut rejected = false;
-        if view.epochs[txn_epoch].revocation.contains(&source.id) {
+        if epochs[txn_epoch].revocation.contains(&source.id) {
             queue.enqueue(
                 Address::AgentId(source.id),
                 Address::NoAddress,
@@ -75,7 +72,7 @@ impl Simulator {
             );
             stats.txns_rejected_total += 1;
             rejected = true;
-        } else if view.epochs[txn_epoch].revocation.contains(&target.id) {
+        } else if epochs[txn_epoch].revocation.contains(&target.id) {
             queue.enqueue(
                 Address::NoAddress,
                 Address::AgentId(target.id),
@@ -86,6 +83,8 @@ impl Simulator {
         } else {
             stats.txns_total += 1;
         }
+        
+        // Transaction type statistics
         if source.data.role.is_consumer() && target.data.role.is_consumer() {
             stats.txns_p2p_rejected_total = stats.txns_rejected_total;
             stats.txns_p2p_total = stats.txns_total;
@@ -151,7 +150,7 @@ impl Simulator {
                     .unwrap()
                     .coin
                     .step_history
-                    .push(view.step);
+                    .push(step);
                 // Create a unique txn id
                 coins
                     .iter_mut()
@@ -295,7 +294,9 @@ impl Simulation for Simulator {
                         // TODO: Enable deposit double spend attempts too, etc.
                         if amount > 0 {
                             count += self.do_transaction(
-                                &view.data(),
+                                view.data().step,
+                                view.data().epoch,
+                                &view.data().epochs,
                                 helper,
                                 agent,
                                 &bank,
@@ -425,7 +426,9 @@ impl Simulation for Simulator {
                         let amount = max(1, helper.rng.gen_range(0..agent.data.coins.len()));
                         let mut coin_count = 0;
                         count += self.do_transaction(
-                            &view.data(),
+                            view.data().step,
+                            view.data().epoch,
+                            &view.data().epochs,
                             helper,
                             agent,
                             receiver,
@@ -634,22 +637,14 @@ impl Simulation for Simulator {
                                         data: target_data,
                                     };
                                     // TODO: Should apply() also just get a pre-fab ViewData that matches the agent's ViewData on generate()?
-                                    let view_data = ViewData {
-                                        id: 0,
-                                        step: world.step,
-                                        deposit_limit: world.deposit_limit,
-                                        tickets_to_give_for_refill: world.ticket_refill,
-                                        bounds: world.graph_size,
-                                        epoch: world.epoch,
-                                        epochs: world.epochs.clone(),
-                                        graph: world.graph.clone()
-                                    };
                                     let mut pending = Vec::new();
                                     // WE must delete the coins or mark them as spent otherwise we'll double
                                     // spend and search oru whole list for coins we don't have.
                                     let mut pop_count = 0;
                                     self.do_transaction(
-                                        &view_data,
+                                        world.step,
+                                        world.epoch,
+                                        &world.epochs,
                                         helper,
                                         agent,
                                         &target,
