@@ -111,13 +111,12 @@ impl Simulator {
             stats.txns_b2b_total = stats.txns_total;
         }
 
-        if stats != Statistics::default() {
-            queue.enqueue(
-                Address::AgentId(source.id),
-                Address::World,
-                EventData::UpdateStatistics(stats),
-            );
-        }
+        queue.enqueue(
+            Address::AgentId(source.id),
+            Address::World,
+            EventData::UpdateStatistics(stats),
+        );
+
         count += 1;
 
         // Don't process the txn if it is rejected by either party based on revocation.
@@ -224,8 +223,7 @@ impl Simulation for Simulator {
             let id = agent.id;
             pop.insert(id, agent);
         }
-        // TODO: Don't copy all epochs over time, but still more efficient than putting it in each
-        // agent.
+        // TODO: Don't copy all epochs over time, but still more efficient than putting it in each agent.
         Some(WorldView::new(
             pop,
             ViewData {
@@ -249,7 +247,6 @@ impl Simulation for Simulator {
     ) -> usize {
         let mut count = 0;
         let helper = &mut *self.helper.write().expect("interior mutability");
-        let stats = Statistics::default();
 
         for e in &agent.data.pending {
             queue.enqueue(e.source, e.target, e.data.clone());
@@ -459,13 +456,7 @@ impl Simulation for Simulator {
                 }
             }
         }
-        if stats != Statistics::default() {
-            queue.enqueue(
-                Address::AgentId(agent.id),
-                Address::World,
-                EventData::UpdateStatistics(stats),
-            );
-        }
+        
         count + 1
     }
 
@@ -476,7 +467,9 @@ impl Simulation for Simulator {
         event: &Event<Self::Event>,
     ) {
         let helper = &mut *self.helper.write().expect("interior mutability");
-        let mut stats = Statistics::default();
+        let mut coins_double_spent_total = 0;
+        let mut coins_total = 0;
+
         // Since generate() cannot delete the pending events, clear the queue if it has old events
         // in it.
         if let Some(e) = agent.data.pending.iter().last() {
@@ -522,9 +515,9 @@ impl Simulation for Simulator {
                         if tcoin.copy {
                             coin.copied = true;
                             // Increment counterfeits total
-                            stats.coins_double_spent_total += 1;
+                            coins_double_spent_total += 1;
                             // Increment total coins in circulation, including counterfeits.
-                            stats.coins_total += 1;
+                            coins_total += 1;
                         }
                         if let AgentRole::Bank(bank) = &mut agent.data.role {
                             bank.holding.push(coin);
@@ -733,7 +726,7 @@ impl Simulation for Simulator {
                     EventData::Transact(_txn) => {
                         if event.source == Address::AgentId(agent.id) {
                             // Now decrement the WID unless the agent is a double spender
-                            if stats.coins_double_spent_total == 0 {
+                            if coins_double_spent_total == 0 {
                                 // this event has not double spent.
                                 data.wids -= 1;
                             }
@@ -793,7 +786,12 @@ impl Simulation for Simulator {
                 _ => {}
             },
         }
-        if stats != Statistics::default() {
+        // If any of the stats change...
+        if coins_double_spent_total != 0 || coins_total != 0 {
+            // ... update them (removed "stats != Statistics::default()" check for efficiency)
+            let mut stats =  Statistics::default();
+            stats.coins_double_spent_total = coins_double_spent_total;
+            stats.coins_total = coins_total;
             agent.data.pending.push(Event {
                 id: world.step,
                 source: Address::AgentId(agent.id),
@@ -1038,10 +1036,10 @@ impl Simulation for Simulator {
                                 world.statistics.coins_double_spent_recovered += 1;
                                 // Now remove the coin from the Updater
                                 // TODO: Add counter to hash map.
-                                let survived_txns = coin.history.len() - ds_entry.unwrap();
+                                // let survived_txns: usize = coin.history.len() - ds_entry.unwrap();
                                 // Start from the first transfer
-                                let survived_steps =
-                                    world.step - coin.step_history[ds_entry.unwrap() + 1];
+                                // let survived_steps =
+                                    // world.step - coin.step_history[ds_entry.unwrap() + 1];
                                 // println!(
                                 //     "[operator] recovered double spend of coin {} after {} txns and {} steps",
                                 //     coin.id, survived_txns, survived_steps,
@@ -1153,7 +1151,7 @@ impl Simulation for Simulator {
             match &event.data {
                 EventData::Arrive(add_data) => {
                     // TODO: loglevels println!("Adding {} agents and resources", add_data.count);
-                    population.new_agents(&add_data.data, add_data.count);
+                    population.new_agents(&add_data.data);
                 }
                 // TODO clean up Depart
                 EventData::Depart(del_data) => {

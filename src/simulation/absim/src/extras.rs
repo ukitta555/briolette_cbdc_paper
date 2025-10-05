@@ -14,7 +14,6 @@
 
 use crate::{Agent, Population, PopulationError, Simulation};
 use rand::prelude::*;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use fnv::{FnvHashMap, FnvBuildHasher};
 
@@ -52,19 +51,15 @@ impl<S: Simulation> Population<S> for SimulationPopulation<S>
         self.agents.values().choose(rng)
     }
 
-    fn new_agents(&mut self, data: &S::Data, num: usize) {
-        let mut count = num;
-        while count > 0 {
-            self.agents.insert(
-                self.next_id,
-                Agent {
-                    id: self.next_id,
-                    data: data.clone(),
-                },
-            );
-            count -= 1;
-            self.next_id += 1;
-        }
+    fn new_agents(&mut self, data: &S::Data) {
+        self.agents.insert(
+            self.next_id,
+            Agent {
+                id: self.next_id,
+                data: data.clone(),
+            },
+        );
+        self.next_id += 1;
     }
     fn get(&self, id: usize) -> Result<&Agent<S::Data>, PopulationError> {
         if let Some(agent) = self.agents.get(&id) {

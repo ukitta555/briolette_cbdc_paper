@@ -20,15 +20,13 @@ pub mod extras;
 pub mod graph_utils;
 
 use rand::prelude::*;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Range;
 
 pub trait SimulationData: Send + Sync + Clone {}
 impl<T> SimulationData for T where T: Send + Sync + Clone {}
 
-#[derive( Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Agent<SD: SimulationData> {
     pub id: usize,
     pub data: SD,
@@ -90,7 +88,7 @@ impl fmt::Display for PopulationError {
 }
 
 pub trait Population<S: Simulation>: Send + Sync + Clone {
-    fn new_agents(&mut self, data: &S::Data, num: usize);
+    fn new_agents(&mut self, data: &S::Data);
     fn update(&mut self, agent: &Agent<S::Data>);
     // Proxies SliceRandom::choose
     fn choose<R>(&self, rng: &mut R) -> Option<&Agent<S::Data>>
@@ -352,7 +350,7 @@ impl<S: Simulation> ManagerInterface<S> for Manager<S> {
         if self.delay_queue.contains_key(&delay) == false {
             self.delay_queue.insert(delay, EventQueue::new());
         }
-        let mut queue = self.delay_queue.get_mut(&delay).unwrap();
+        let queue = self.delay_queue.get_mut(&delay).unwrap();
         for datum in data {
             queue.enqueue(source.clone(), target.clone(), datum);
         }

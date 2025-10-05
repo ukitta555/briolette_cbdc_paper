@@ -17,7 +17,7 @@
 pub mod simulator;
 pub mod utils;
 
-use std::{fs::{File, OpenOptions}, io::{self, BufRead}, time::{SystemTime, UNIX_EPOCH}};
+use std::{fs::{File, OpenOptions}, io::{self, BufRead}, time::{SystemTime, UNIX_EPOCH, Instant}};
 use absim::graph_utils::{GraphVertexIndex, SimulationGraph};
 use rand::{prelude::*};
 use rand::{rngs::StdRng, SeedableRng};
@@ -330,7 +330,6 @@ pub struct ResourceData {
 #[derive(PartialEq, Clone)]
 pub struct PopulationAdd {
     data: AgentData,
-    count: usize,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -782,13 +781,16 @@ fn create_experiment_directory(experiment_type: &str, population_size: u64) -> i
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
 fn main() -> io::Result<()> {
+    let program_start = Instant::now();
+    println!("Program started at: {:?}", program_start);
+    
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
     let cli = Cli::parse();
 
     match cli.command {
         Commands::Predefined => {
-            let population_size = 100;
+            let population_size = 10000;
             let repeat_experiment_number_of_times = 1;
             let mut experiments: HashMap<usize, Vec<ExperimentConfig>> = HashMap::new();
             let experiment_dir = create_experiment_directory("predefined", population_size as u64)?;
@@ -1101,7 +1103,11 @@ fn main() -> io::Result<()> {
                 }
             }
 
+            let experiments_start = Instant::now();
+            println!("Starting experiments at: {:?}", experiments_start);
             run_experiments(experiments, population_size, &experiment_dir)?;
+            let experiments_end = Instant::now();
+            println!("Experiments completed in: {:?}", experiments_end.duration_since(experiments_start));
         },
         Commands::Sobol { params_file, repeat, population_size } => {
             let mut experiments: HashMap<usize, Vec<ExperimentConfig>> = HashMap::new();
@@ -1162,9 +1168,18 @@ fn main() -> io::Result<()> {
                 }
             }
 
+            let experiments_start = Instant::now();
+            println!("Starting experiments at: {:?}", experiments_start);
             run_experiments(experiments, population_size as u64, &experiment_dir)?;
+            let experiments_end = Instant::now();
+            println!("Experiments completed in: {:?}", experiments_end.duration_since(experiments_start));
         }
     }
+    
+    let program_end = Instant::now();
+    let total_duration = program_end.duration_since(program_start);
+    println!("Total program execution time: {:?}", total_duration);
+    println!("Program completed at: {:?}", program_end);
     
     Ok(())
 }
@@ -1174,6 +1189,9 @@ fn run_experiments(
     population_size: u64,
     experiment_dir: &str,
 ) -> io::Result<()> {
+    let run_experiments_start = Instant::now();
+    println!("run_experiments started at: {:?}", run_experiments_start);
+    
     let mut used_random_ids: HashSet<u64> = HashSet::new();
     let guard = pprof::ProfilerGuardBuilder::default()
         .frequency(1000)
@@ -1182,7 +1200,13 @@ fn run_experiments(
         .unwrap();
 
     for (experiment_id, experiment_vector) in &experiments {
-        for experiment in experiment_vector {
+        let experiment_group_start = Instant::now();
+        println!("Starting experiment group {} at: {:?}", experiment_id, experiment_group_start);
+        
+        for (exp_idx, experiment) in experiment_vector.iter().enumerate() {
+            let individual_experiment_start = Instant::now();
+            println!("Starting individual experiment {} in group {} at: {:?}", exp_idx, experiment_id, individual_experiment_start);
+            
             let graph: SimulationGraph = SimulationGraph::new(experiment.graph_file.as_str())?;
             let timestamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -1293,7 +1317,6 @@ fn run_experiments(
                             pending: vec![],
                             role: AgentRole::Bank(BankData { holding: vec![] }),
                         },
-                        count: 1,
                     })],
                 );
             }
@@ -1336,7 +1359,6 @@ fn run_experiments(
                                 bank: c % num_banks, // ensure we match the balance with the coins. TODO: Register() to get bank and balance.
                             }),
                         },
-                        count: 1,
                     })],
                 );
             }
@@ -1378,7 +1400,6 @@ fn run_experiments(
                                 bank: rng.gen_range(0..num_banks),
                             }),
                         },
-                        count: 1,
                     })],
                 );
             }
@@ -1420,7 +1441,6 @@ fn run_experiments(
                                 bank: rng.gen_range(0..num_banks),
                             }),
                         },
-                        count: 1,
                     })],
                     15,
                 );
@@ -1460,7 +1480,6 @@ fn run_experiments(
                                 bank: rng.gen_range(0..num_banks),
                             }),
                         },
-                        count: 1,
                     })],
                 );
             }
@@ -1527,13 +1546,23 @@ fn run_experiments(
                     mgr.run(4000, &file_path);
                 }
             };
+            
+            let individual_experiment_end = Instant::now();
+            println!("Individual experiment {} in group {} completed in: {:?}", exp_idx, experiment_id, individual_experiment_end.duration_since(individual_experiment_start));
         }
-        if let Ok(report) = guard.report().build() {
-            let flamegraph_path = format!("{}/flamegraph.svg", experiment_dir);
-            let file = File::create(&flamegraph_path)?;
-            report.flamegraph(file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        };
+        
+        let experiment_group_end = Instant::now();
+        println!("Experiment group {} completed in: {:?}", experiment_id, experiment_group_end.duration_since(experiment_group_start));
     }
+    
+    if let Ok(report) = guard.report().build() {
+        let flamegraph_path = format!("{}/flamegraph.svg", experiment_dir);
+        let file = File::create(&flamegraph_path)?;
+        report.flamegraph(file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    }
+    
+    let run_experiments_end = Instant::now();
+    println!("run_experiments completed in: {:?}", run_experiments_end.duration_since(run_experiments_start));
     
     Ok(())
 }

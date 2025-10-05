@@ -3,11 +3,11 @@ name = "briolette-sim"
 version = "0.1.0"   
 edition = "2021"
 
-[profile.release]
-debug = 1
+# [profile.release]
+# debug = 1
 
-[features]
-dhat-heap = []    # if you are doing heap profiling
+# [features]
+# dhat-heap = []    # if you are doing heap profiling
 # dhat-ad-hoc = []  # if you are doing ad hoc profiling
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
