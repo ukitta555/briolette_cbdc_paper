@@ -138,7 +138,7 @@ def plot_spenders_caught_vs_ratio(results, output_dir, results_dir):
     plt.plot(x_range, p(x_range), "r--", alpha=0.8, linewidth=5.0)
     
     plt.xlabel("Malicious to Total Ratio", fontsize=26)
-    plt.ylabel("Ratio of Spenders Caught", fontsize=26)
+    plt.ylabel("Double Spenders Caught", fontsize=26)
     plt.grid(True)
     plt.xticks(fontsize=22)
     plt.yticks(fontsize=22)
