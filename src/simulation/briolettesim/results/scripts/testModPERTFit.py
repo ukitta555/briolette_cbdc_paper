@@ -6,7 +6,7 @@ from scipy.optimize import curve_fit
 
 # Using the wikipedia definition of modPert
 # This model is tested to be correct
-def modPertModel(x, a, b, c, scale, locX, locY):
+def modPertModel(x, a, b, c, scale, locY):
     alphaParam = 1.0 + (4.0 * (b - a) / (c - a))
     betaParam = 1.0 + (4.0 * (c - b) / (c - a))
     betaFcnSample = sc.beta(alphaParam, betaParam)
@@ -17,7 +17,7 @@ def modPertModel(x, a, b, c, scale, locX, locY):
     numer = firstNumer * secondNumer
     denom = betaFcnSample * secondDenom
 
-    return ((locX + (numer / denom)) * scale) + locY
+    return ((numer / denom) * scale) + locY
 
 
 # def betaModel(x, a, b):
@@ -49,18 +49,18 @@ if __name__ == "__main__":
     # plt.show()
 
     # Plot ModPert for sanity checks
-    #
+    # Uncomment this to test expected forms of the modPert distribution with chosen parameters
     # testX = np.arange(1, 10000, 1.0)
-    # modPertY = modPertModel(testX, 1, 7000, 10000)
+    # modPertY = modPertModel(testX, 1, 7000, 10000, 1, 0)
     # plt.figure()
     # plt.plot(testX, modPertY)
     # plt.show()
-    #
+
 
     # Derive the initial guess from the original curve.
     # The only guess right now is the scale (last parameter), but I'm confident that can be derived from the data as well
     #
-    initialGuess = np.array([minX, x[maxYLoc], maxX, 2000, 0, 0])
+    initialGuess = np.array([minX, x[maxYLoc], maxX, 2000, 0])
 
     popt, pcov, fitDetails, mesg, ier = curve_fit(
         modPertModel,
@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
     plt.figure()
     plt.plot(x, normY, ".")
-    fity = modPertModel(x, popt[0], popt[1], popt[2], popt[3], popt[4], popt[5])
+    fity = modPertModel(x, popt[0], popt[1], popt[2], popt[3], popt[4])
     plt.plot(x, fity)
     plt.show()
 
