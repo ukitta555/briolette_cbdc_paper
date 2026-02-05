@@ -145,6 +145,7 @@ pub struct EpochSampleStats {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct Statistics {
+    double_spend_txns: usize,
     potential_double_spender_max: usize,
     double_spenders_total: usize,
     double_spenders_revoked_total: usize,
@@ -199,6 +200,7 @@ impl Statistics {
     }
     
     pub fn update(&mut self, stats: &Statistics) {
+        self.double_spend_txns += stats.double_spend_txns;
         self.potential_double_spender_max += stats.potential_double_spender_max;
         self.double_spenders_total += stats.double_spenders_total;
         self.double_spenders_revoked_total += stats.double_spenders_revoked_total;
@@ -294,6 +296,13 @@ impl AgentRole {
     pub fn is_bank(&self) -> bool {
         match self {
             AgentRole::Bank(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_double_spender(&self) -> bool {
+        match self {
+            AgentRole::Consumer(data) => data.double_spend_probability == 1.0,
             _ => false,
         }
     }
@@ -1530,7 +1539,8 @@ fn run_single_experiment(task: ExperimentTask) -> io::Result<()> {
 
     // mgr.register_observer(1, &observe);
     // mgr.register_observer(1, &check_exit_conditions_and_print_results_to_file);
-    mgr.register_observer(1, check_exit_conditions_and_print_results_to_file_avged_out);
+    // mgr.register_observer(1, check_exit_conditions_and_print_results_to_file_avged_out);
+    mgr.register_observer(1, check_exit_conditions_and_print_results_to_file_FAIR);
     
     match &task.experiment.graph_config {
         GraphConfig::Watts(_wc) => {
@@ -1874,6 +1884,45 @@ fn check_exit_conditions_and_print_results_to_file_avged_out(
                 Ok(_) => (),
                 Err(e) => panic!("{}", e) 
             }
+        }
+        match writeln!(file) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        }
+    }
+}
+
+fn check_exit_conditions_and_print_results_to_file_FAIR(
+    step: usize, 
+    world: &WorldData, 
+    _pop: &SimulationPopulation<Simulator>,
+    end_simulation_flag: &mut bool, 
+    file_path: &str
+) {
+    if step == 72 {
+        *end_simulation_flag = true;
+        // Ensure the directory exists
+        if let Some(parent) = Path::new(file_path).parent() {
+            fs::create_dir_all(parent).unwrap_or_else(|e| {
+                eprintln!("Failed to create directory {:?}: {}", parent, e);
+                panic!("Failed to create directory");
+            });
+        }
+
+        let mut file = OpenOptions::new()
+            .create(true)  // Create the file if it doesn't exist
+            .write(true)   // Open the file for writing
+            .append(true)  // Append to the file if it exists
+            .open(file_path)
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to open file {}: {}", file_path, e);
+                panic!("Failed to open file");
+            });
+
+        // Double spend transactions and total double spend amount
+        match write!(file, "{} {} {}", world.statistics.double_spend_txns, world.statistics.coins_double_spent_total, world.statistics.txns_total) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
         }
         match writeln!(file) {
             Ok(_) => (),

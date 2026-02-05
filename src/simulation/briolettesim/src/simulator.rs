@@ -110,7 +110,24 @@ impl Simulator {
             stats.txns_b2b_rejected_total = stats.txns_rejected_total;
             stats.txns_b2b_total = stats.txns_total;
         }
+        if source.data.role.is_double_spender() && (!target.data.role.is_bank() && !target.data.role.is_double_spender()) {
+            stats.double_spend_txns += 1;
+        }
+        // match &source.data.role {
+        //     AgentRole::Consumer(data) => {
+        //         match &target.data.role {
+        //             AgentRole::Consumer(t_data) => {
+        //                 if data.double_spend_probability == 1.0 && t_data.double_spend_probability != 1.0{
+        //                     stats.double_spend_txs += 1
+        //                 }
 
+        //             }
+        //             _ => ()
+        //         }
+        //     }
+        //     _ => ()
+        // }
+        
         queue.enqueue(
             Address::AgentId(source.id),
             Address::World,
