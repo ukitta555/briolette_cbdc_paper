@@ -1458,48 +1458,48 @@ fn run_single_experiment(task: ExperimentTask) -> io::Result<()> {
     }
 
     // Randomly place double spenders in the future
-    for _ in 0..num_double_spenders {
-        let idx = rng.gen_range(0..mgr.world().graph_size);
-        mgr.enqueue_delayed(
-            Address::NoAddress,
-            Address::Population,
-            vec![EventData::Arrive(PopulationAdd {
-                data: AgentData {
-                    location: GraphVertexIndex(idx),
-                    registered: false,
-                    epoch: 0,
-                    coins: vec![],
-                    pending: vec![],
-                    role: AgentRole::Consumer(ConsumerData {
-                        lifetime: 43800, // 5 years in hours for phone lifetime.
-                        sync_probability: 0.0,
-                        sync_distribution: SupportedDistributions::Uniform,
-                        p2m_probability: 1.0,
-                        p2m_distribution: SupportedDistributions::Uniform,
-                        p2p_probability: 1.0,
-                        p2p_distribution: SupportedDistributions::Uniform,
-                        double_spend_probability: 1.0,
-                        double_spend_distribution: SupportedDistributions::Uniform,
-                        max_rejections: 5,
-                        move_distribution: SupportedDistributions::Uniform,
-                        move_probability: 1.0,
-                        /*
-                        step_period: 24,
-                        max_transactions_per_period: 72,
-                        */
-                        wids: task.experiment.tickets_given_right_away,
-                        wid_low_watermark: task.experiment.tickets_lower_bound_to_sync,
-                        account_balance: default_balance,
-                        last_requested_step: 0,
-                        bank: rng.gen_range(0..num_banks),
-                    }),
-                },
-            })],
-            15,
-        );
-    }
+    // for _ in 0..num_double_spenders {
+    //     let idx = rng.gen_range(0..mgr.world().graph_size);
+    //     mgr.enqueue_delayed(
+    //         Address::NoAddress,
+    //         Address::Population,
+    //         vec![EventData::Arrive(PopulationAdd {
+    //             data: AgentData {
+    //                 location: GraphVertexIndex(idx),
+    //                 registered: false,
+    //                 epoch: 0,
+    //                 coins: vec![],
+    //                 pending: vec![],
+    //                 role: AgentRole::Consumer(ConsumerData {
+    //                     lifetime: 43800, // 5 years in hours for phone lifetime.
+    //                     sync_probability: 0.0,
+    //                     sync_distribution: SupportedDistributions::Uniform,
+    //                     p2m_probability: 1.0,
+    //                     p2m_distribution: SupportedDistributions::Uniform,
+    //                     p2p_probability: 1.0,
+    //                     p2p_distribution: SupportedDistributions::Uniform,
+    //                     double_spend_probability: 1.0,
+    //                     double_spend_distribution: SupportedDistributions::Uniform,
+    //                     max_rejections: 5,
+    //                     move_distribution: SupportedDistributions::Uniform,
+    //                     move_probability: 1.0,
+    //                     /*
+    //                     step_period: 24,
+    //                     max_transactions_per_period: 72,
+    //                     */
+    //                     wids: task.experiment.tickets_given_right_away,
+    //                     wid_low_watermark: task.experiment.tickets_lower_bound_to_sync,
+    //                     account_balance: default_balance,
+    //                     last_requested_step: 0,
+    //                     bank: rng.gen_range(0..num_banks),
+    //                 }),
+    //             },
+    //         })],
+    //         15,
+    //     );
+    // }
 
-    upstats.double_spenders_total = num_double_spenders * 2;
+    upstats.double_spenders_total = num_double_spenders;// * 2;
     upstats.total_people = upstats.double_spenders_total + num_consumers;
 
 
