@@ -6,11 +6,11 @@ names_4 = ['move_prob', 'p2p', 'p2m', 'ds_ratio']
 bounds_4 = [[0.05, 0.7],
             [0.1, 0.5],
             [0.1, 0.5],
-            [0.05264, 3]]
+            [0.05264, 3]] # 1 for every 20 -> 3 for 1 (Malicious:Honest)
 bounds_4_realistic_adversary = [[0.05, 0.7],
             [0.1, 0.5],
             [0.1, 0.5],
-            [0.05264, 3]]
+            [0.0001, 0.01]] # 1 in every 10k -> 1 in every 100 (Malicious:Honest)
 bounds_bottom_10_4 = [[0.05332457115873695, 0.6976294308900832],
             [0.10273502804338933, 0.49859678372740746],
             [0.1007303286343813, 0.4989615138620138],
@@ -29,7 +29,7 @@ problem = {
 sp = ProblemSpec(problem)
 sp.sample_sobol(1024, calc_second_order=False)
 
-np.savetxt(f"results/FAIR_params_{problem["num_vars"]}/FAIR_params.txt", sp.samples, "%.17g")
+np.savetxt(f"results/FAIR_params_{problem["num_vars"]}_realistic/FAIR_params.txt", sp.samples, "%.17g")
 
 # Old way
 # param_values = sobol.sample(problem, 1024, calc_second_order=False)
