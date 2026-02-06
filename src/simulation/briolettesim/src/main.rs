@@ -1143,7 +1143,9 @@ fn main() -> io::Result<()> {
                     move_probability,
                     p2p_probability,
                     p2m_probability,
-                    ratio_double_spenders_to_honest
+                    ratio_double_spenders_to_honest,
+                    offline_transaction_limit,
+                    starting_account_balance
                 ] = experiment_params.as_slice() {
                     for _ in 0..repeat {
                         experiments
@@ -1156,25 +1158,25 @@ fn main() -> io::Result<()> {
                                     top_up_amount: 10,
                                     merchants: 30, 
                                     banks: 5,
-                                    // graph_file: format!("graphs/barabasi_albert_8_m.txt"),
-                                    graph_file: format!("graphs/watts-strogatz-5-connections.txt"),
+                                    graph_file: format!("graphs/barabasi_albert_8_m.txt"),
+                                    // graph_file: format!("graphs/watts-strogatz-5-connections.txt"),
                                     p2m_probability: *p2m_probability, 
                                     p2p_probability: *p2p_probability, 
                                     move_probability: *move_probability,   
                                     merchant_sync_frequency: 8,
-                                    tickets_given_right_away: 8, 
+                                    tickets_given_right_away: (*offline_transaction_limit).round() as usize, 
                                     tickets_lower_bound_to_sync: 2,
-                                    account_balance: 200,
-                                    model: Model::Rural,
-                                    graph_config: GraphConfig::Watts(WattsConfig {
-                                        size: 64, 
-                                        param: 5,
-                                    }),
-                                    // model: Model::Urban,
-                                    // graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                                    account_balance: (*starting_account_balance).round() as usize,
+                                    // model: Model::Rural,
+                                    // graph_config: GraphConfig::Watts(WattsConfig {
                                     //     size: 64, 
-                                    //     param: 8,
+                                    //     param: 5,
                                     // }),
+                                    model: Model::Urban,
+                                    graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                                        size: 64, 
+                                        param: 8,
+                                    }),
                                     category: ExperimentCategory::Sobol,
                                 },
                             );
