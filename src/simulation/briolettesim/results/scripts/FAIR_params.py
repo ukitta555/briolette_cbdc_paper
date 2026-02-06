@@ -20,16 +20,24 @@ bounds_top_10_4 = [[0.05313667901791633, 0.6997700172010809],
             [0.10007842518389226, 0.4978264268487692],
             [2.100510159525573, 2.999915667119175]]
 
+names_6 = ['move_prob', 'p2p', 'p2m', 'ds_ratio', 'l_offline', 'start_balance']
+bounds_6 = [[0.05, 0.7],
+            [0.1, 0.5],
+            [0.1, 0.5],
+            [0.0001, 0.01],
+            [6+2, 36+2], # +2 to account for T_low (balance triggering top-up)
+            [100, 1000]]
+
 problem = {
-    'num_vars': 4,
-    'names': names_4,
-    'bounds': bounds_4_realistic_adversary
+    'num_vars': 6,
+    'names': names_6,
+    'bounds': bounds_6
 }
 
 sp = ProblemSpec(problem)
 sp.sample_sobol(1024, calc_second_order=False)
 
-np.savetxt(f"results/FAIR_params_{problem["num_vars"]}_realistic/FAIR_params.txt", sp.samples, "%.17g")
+np.savetxt(f"results/FAIR_params_{problem["num_vars"]}/FAIR_params.txt", sp.samples, "%.17g")
 
 # Old way
 # param_values = sobol.sample(problem, 1024, calc_second_order=False)
