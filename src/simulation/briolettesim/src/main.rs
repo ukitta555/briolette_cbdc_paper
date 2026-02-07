@@ -1572,13 +1572,15 @@ fn run_single_experiment(task: ExperimentTask) -> io::Result<()> {
 
             let subdir = format!("{}/urban", task.experiment_dir);
             let file_path = format!(
-                "{}/model_{:?}_p2p_{}_p2m_{}_ratiodoublespenders_{}_move_{}_expid_{}_{:?}_{}k_actors.txt",
+                "{}/model_{:?}_p2p_{}_p2m_{}_ratiodoublespenders_{}_move_{}_offlimit_{}_balance_{}_expid_{}_{:?}_{}k_actors.txt",
                 subdir,
                 task.experiment.model,
                 task.experiment.p2p_probability,
                 task.experiment.p2m_probability,
                 task.experiment.ratio_double_spenders_to_honest,
                 task.experiment.move_probability,
+                task.experiment.tickets_given_right_away,
+                task.experiment.account_balance
                 task.experiment_id,
                 task.experiment.category,
                 task.population_size / 1000
