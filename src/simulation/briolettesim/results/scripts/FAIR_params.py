@@ -10,7 +10,7 @@ bounds_4 = [[0.05, 0.7],
 bounds_4_realistic_adversary = [[0.05, 0.7],
             [0.1, 0.5],
             [0.1, 0.5],
-            [0.0001, 0.01]] # 1 in every 10k -> 1 in every 100 (Malicious:Honest)
+            [0.0002, 0.02]] # 1 in every 10k -> 1 in every 100 (Malicious:Honest)
 bounds_bottom_10_4 = [[0.05332457115873695, 0.6976294308900832],
             [0.10273502804338933, 0.49859678372740746],
             [0.1007303286343813, 0.4989615138620138],
@@ -24,7 +24,7 @@ names_6 = ['move_prob', 'p2p', 'p2m', 'ds_ratio', 'l_offline', 'start_balance']
 bounds_6 = [[0.05, 0.7],
             [0.1, 0.5],
             [0.1, 0.5],
-            [0.0001, 0.01],
+            [0.0002, 0.02],
             [6+2, 36+2], # +2 to account for T_low (balance triggering top-up)
             [100, 1000]]
 
