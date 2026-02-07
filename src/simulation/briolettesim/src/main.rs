@@ -1580,7 +1580,7 @@ fn run_single_experiment(task: ExperimentTask) -> io::Result<()> {
                 task.experiment.ratio_double_spenders_to_honest,
                 task.experiment.move_probability,
                 task.experiment.tickets_given_right_away,
-                task.experiment.account_balance
+                task.experiment.account_balance,
                 task.experiment_id,
                 task.experiment.category,
                 task.population_size / 1000
