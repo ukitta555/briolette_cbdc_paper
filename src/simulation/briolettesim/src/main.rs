@@ -66,7 +66,7 @@ enum Commands {
     /// - move_probability: Probability of agents moving between locations
     /// - p2p_probability: Probability of peer-to-peer transactions
     /// - p2m_probability: Probability of peer-to-merchant transactions
-    /// - ratio_double_spenders_to_honest: Ratio of malicious to honest agents
+    /// - ratio_double_spenders_to_population: Ratio of malicious agents to total population
     Sobol {
         /// Path to the Sobol parameters file containing space-separated parameter values
         #[arg(short, long)]
@@ -723,7 +723,7 @@ pub enum ExperimentCategory {
 
 #[derive(Clone, Debug)]
 pub struct ExperimentConfig {
-    ratio_double_spenders_to_honest: f64,
+    ratio_double_spenders_to_population: f64,
     top_up_amount: usize,
     merchants: usize,
     banks: usize,
@@ -812,7 +812,7 @@ fn main() -> io::Result<()> {
             // Add your predefined experiments here
             let predefined_experiments = vec![
                 ExperimentConfig { // 1:1
-                    ratio_double_spenders_to_honest: 1.0,
+                    ratio_double_spenders_to_population: 1.0,
                     top_up_amount: 10, 
                     merchants: 30, 
                     banks: 10,
@@ -833,7 +833,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::ThreatLevel,
                 },
                 ExperimentConfig { // 2:1
-                    ratio_double_spenders_to_honest: 0.5,
+                    ratio_double_spenders_to_population: 0.5,
                     top_up_amount: 10,
                     merchants: 30, 
                     banks: 10,
@@ -854,7 +854,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::ThreatLevel,
                 },
                 ExperimentConfig { // 4:1
-                    ratio_double_spenders_to_honest: 0.25,
+                    ratio_double_spenders_to_population: 0.25,
                     top_up_amount: 10, 
                     merchants: 30, 
                     banks: 10,
@@ -875,7 +875,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::ThreatLevel,
                 },
                 ExperimentConfig { // 10:1
-                    ratio_double_spenders_to_honest: 0.1,
+                    ratio_double_spenders_to_population: 0.1,
                     top_up_amount: 10, 
                     merchants: 30, 
                     banks: 10,
@@ -896,7 +896,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::ThreatLevel,
                 },
                 ExperimentConfig { // 2:1, big top-up, merchants sync every 24 hours, 50 tickets > slowest sync
-                    ratio_double_spenders_to_honest: 0.5,
+                    ratio_double_spenders_to_population: 0.5,
                     top_up_amount: 50, 
                     merchants: 30, 
                     banks: 10,
@@ -917,7 +917,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::SyncParams,
                 },
                 ExperimentConfig { // 2:1, medium top-up, merchants sync every 12 hours, 20 tickets  > slower sync
-                    ratio_double_spenders_to_honest: 0.5,
+                    ratio_double_spenders_to_population: 0.5,
                     top_up_amount: 20, 
                     merchants: 30, 
                     banks: 10,
@@ -938,7 +938,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::SyncParams,
                 },
                 ExperimentConfig { // 2:1, small top-up, merchants sync every 8 hours, 8 tickets > quick sync 
-                    ratio_double_spenders_to_honest: 0.5,
+                    ratio_double_spenders_to_population: 0.5,
                     top_up_amount: 5, 
                     merchants: 30, 
                     banks: 10,
@@ -960,7 +960,7 @@ fn main() -> io::Result<()> {
                 },
                 // RURAL SCENARIO STARTS HERE
                 ExperimentConfig { // 1:1
-                    ratio_double_spenders_to_honest: 1.0,
+                    ratio_double_spenders_to_population: 1.0,
                     top_up_amount: 10, 
                     merchants: 30, 
                     banks: 5,
@@ -981,7 +981,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::ThreatLevel,
                 },
                 ExperimentConfig { // 2:1
-                    ratio_double_spenders_to_honest: 0.5,
+                    ratio_double_spenders_to_population: 0.5,
                     top_up_amount: 10,
                     merchants: 30, 
                     banks: 5,
@@ -1002,7 +1002,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::ThreatLevel,
                 },
                 ExperimentConfig { // 4:1
-                    ratio_double_spenders_to_honest: 0.25,
+                    ratio_double_spenders_to_population: 0.25,
                     top_up_amount: 10, 
                     merchants: 30, 
                     banks: 5,
@@ -1023,7 +1023,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::ThreatLevel,
                 },
                 ExperimentConfig { // 10:1
-                    ratio_double_spenders_to_honest: 0.1,
+                    ratio_double_spenders_to_population: 0.1,
                     top_up_amount: 10, 
                     merchants: 30, 
                     banks: 5,
@@ -1044,7 +1044,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::ThreatLevel,
                 },
                 ExperimentConfig { // 2:1, big top-up, merchants sync every 24 hours, 50 tickets > slowest sync
-                    ratio_double_spenders_to_honest: 0.5,
+                    ratio_double_spenders_to_population: 0.5,
                     top_up_amount: 50, 
                     merchants: 30, 
                     banks: 5,
@@ -1065,7 +1065,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::SyncParams,
                 },
                 ExperimentConfig { // 2:1, medium top-up, merchants sync every 12 hours, 20 tickets  > slower sync
-                    ratio_double_spenders_to_honest: 0.5,
+                    ratio_double_spenders_to_population: 0.5,
                     top_up_amount: 20, 
                     merchants: 30, 
                     banks: 5,
@@ -1086,7 +1086,7 @@ fn main() -> io::Result<()> {
                     category: ExperimentCategory::SyncParams,
                 },
                 ExperimentConfig { // 2:1, small top-up, merchants sync every 8 hours, 8 tickets > quick sync 
-                    ratio_double_spenders_to_honest: 0.5,
+                    ratio_double_spenders_to_population: 0.5,
                     top_up_amount: 5, 
                     merchants: 30, 
                     banks: 5,
@@ -1143,7 +1143,7 @@ fn main() -> io::Result<()> {
                     move_probability,
                     p2p_probability,
                     p2m_probability,
-                    ratio_double_spenders_to_honest
+                    ratio_double_spenders_to_population
                 ] = experiment_params.as_slice() {
                     for _ in 0..repeat {
                         experiments
@@ -1151,7 +1151,7 @@ fn main() -> io::Result<()> {
                             .or_insert_with(Vec::new)
                             .push(
                                 ExperimentConfig {
-                                    ratio_double_spenders_to_honest: *ratio_double_spenders_to_honest,
+                                    ratio_double_spenders_to_population: *ratio_double_spenders_to_population,
                                     random_sync_probability: 0.01,
                                     top_up_amount: 10,
                                     merchants: 30, 
@@ -1286,7 +1286,7 @@ fn run_single_experiment(task: ExperimentTask) -> io::Result<()> {
 
     let (num_consumers, num_double_spenders) = split_population(
         task.population_size, 
-        task.experiment.ratio_double_spenders_to_honest
+        task.experiment.ratio_double_spenders_to_population
     ); 
     let num_merchants = task.experiment.merchants;
     let num_banks = task.experiment.banks;
@@ -1552,7 +1552,7 @@ fn run_single_experiment(task: ExperimentTask) -> io::Result<()> {
                 task.experiment.model,
                 task.experiment.p2p_probability,
                 task.experiment.p2m_probability,
-                task.experiment.ratio_double_spenders_to_honest,
+                task.experiment.ratio_double_spenders_to_population,
                 task.experiment.move_probability,
                 task.experiment_id,
                 task.experiment.category,
@@ -1575,7 +1575,7 @@ fn run_single_experiment(task: ExperimentTask) -> io::Result<()> {
                 task.experiment.model,
                 task.experiment.p2p_probability,
                 task.experiment.p2m_probability,
-                task.experiment.ratio_double_spenders_to_honest,
+                task.experiment.ratio_double_spenders_to_population,
                 task.experiment.move_probability,
                 task.experiment_id,
                 task.experiment.category,
