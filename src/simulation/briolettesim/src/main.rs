@@ -1164,9 +1164,9 @@ fn main() -> io::Result<()> {
                                     p2p_probability: *p2p_probability, 
                                     move_probability: *move_probability,   
                                     merchant_sync_frequency: 8,
-                                    tickets_given_right_away: (*offline_transaction_limit).round() as usize, 
+                                    tickets_given_right_away: (*offline_transaction_limit).trunc() as usize,
                                     tickets_lower_bound_to_sync: 2,
-                                    account_balance: (*starting_account_balance).round() as usize,
+                                    account_balance: (*starting_account_balance).trunc() as usize,
                                     // model: Model::Rural,
                                     // graph_config: GraphConfig::Watts(WattsConfig {
                                     //     size: 64, 
