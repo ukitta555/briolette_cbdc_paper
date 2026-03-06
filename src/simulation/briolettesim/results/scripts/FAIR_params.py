@@ -10,7 +10,7 @@ bounds_4 = [[0.05, 0.7],
 bounds_4_realistic_adversary = [[0.05, 0.7],
             [0.1, 0.5],
             [0.1, 0.5],
-            # [0.0001, 0.01]] # 1 in every 10k -> 1 in every 100 (Malicious:Honest)
+            # [0.0002, 0.02]] # 2 in every 10k -> 2 in every 100 (Malicious:Honest)
             [0.001, 0.1]] # 1 in every 1k -> 1 in every 10 (Malicious:Honest)
 bounds_bottom_10_4 = [[0.05332457115873695, 0.6976294308900832],
             [0.10273502804338933, 0.49859678372740746],
