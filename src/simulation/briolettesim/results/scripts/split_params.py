@@ -1,12 +1,16 @@
 import os
 
 target_dir = "results/FAIR_params_4_realistic"
+n_slices = 16
+
 original = open(os.path.join(target_dir, "FAIR_params.txt"))
-
 params = original.readlines()
-slice_size = int(len(params)/16)
+original.close()
 
-for file_idx in range(16):
+slice_size = int(len(params)/n_slices)
+
+for file_idx in range(n_slices):
+  start = file_idx*slice_size  
   output = open(os.path.join(target_dir, f"FAIR_params_{file_idx}.txt"), "w")
-  output.writelines(params[file_idx:file_idx+slice_size])
+  output.writelines(params[start:start+slice_size])
   output.close()
