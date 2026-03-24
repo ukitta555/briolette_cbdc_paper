@@ -211,9 +211,9 @@ for filename in os.listdir(target_dir):
   if not os.path.isfile(filepath):
     continue  # skip subdirectories or non-files
 
-  params = extract_parameter_values(filename)
-  if params is None:
-      continue
+#   params = extract_parameter_values(filename)
+#   if params is None:
+#       continue
 
   # Parse the file line by line
   with open(filepath, "r") as f:
@@ -237,7 +237,7 @@ for filename in os.listdir(target_dir):
         PL.append(pl)
         TTXS.append(ttxs)
     
-      CoF_dict[cof] = params
+    #   CoF_dict[cof] = params
     
     if average_values:
       CoF.append(np.mean(tmp_cof))
