@@ -116,7 +116,7 @@ def fit_curve(x_data, y_data, initial_guess, use_built_in_model, fit_gamma):
             popt, pcov, infodict, mseg, ier = curve_fit(PERT, x_data, y_data, p0=initial_guess[:-1], bounds= (bounds[0][:-1], bounds[1][:-1]), full_output=True)
     else:
         param_names = ['Minimum', 'Mode', 'Maximum', 'Scale', 'LocY']
-        popt, pcov, infodict, mseg, ier = curve_fit(modPertModel, x_data, y_data, p0=initial_guess, full_output=True)
+        popt, pcov, infodict, mseg, ier = curve_fit(modPertModel, x_data, y_data, p0=initial_guess, full_output=True, maxfev=48000)
 
     # Calculate confidence intervals
     perr = np.sqrt(np.diag(pcov))
@@ -192,7 +192,7 @@ def fit_and_plot_hist(ax, hist, label, bin_width):
         #ax.axvline(x=popt[2], color='black', linestyle='--')
 
     ax.set_title(label)
-    ax.set_xticks([10000,20000,30000,40000,50000,60000,70000,80000,90000,100000]) # CoF
+    # ax.set_xticks([10000,20000,30000,40000,50000,60000,70000,80000,90000,100000]) # CoF
     # ax.set_xticks([25000,50000,75000,100000,125000,150000,175000,200000,225000,250000,275000,300000]) # PL
     ax.set_xlabel(x_labels[label])
     ax.set_ylabel("Probability")
@@ -292,5 +292,5 @@ if single_graph:
 else:
     for fig, name in zip(figs, diagrams_to_draw):
         fig.tight_layout()
-        fig.savefig(f"results/plots/FAIR_hist_{name}.pdf")
+        fig.savefig(f"results/plots/{target_dir.split("/")[-1]}_hist_{name}.pdf")
         plt.close(fig)
