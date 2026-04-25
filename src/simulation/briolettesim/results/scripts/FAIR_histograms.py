@@ -20,8 +20,6 @@ from scipy.stats import beta as beta_dist
 target_dir = "results/sobol_experiments/FAIR_10k_urban"
 # target_dir = "results/sobol_experiments/FAIR_10k_rural"
 
-CoF, PL, TTXS = [], [], []
-CoF_dict = {}
 # target_dir = "results/sobol_experiments/FAIR_10k_urban_realistic"
 # target_dir = "results/sobol_experiments/FAIR_10k_urban_1-5k_1-50"
 # target_dir = "results/sobol_experiments/FAIR_10k_urban_1-1k_1-10"
@@ -227,9 +225,11 @@ def fit_and_plot_hist(ax, hist, label, bin_width):
     ax.grid(True, alpha=0.3, linestyle='dashdot', linewidth=0.5)
 
 ### Program starts here ###
+CoF, PL, TTXS = [], [], []
+CoF_dict = {}
 single_graph = False
 average_values = False
-diagrams_to_draw = ["Contact Frequency"] #["Contact Frequency", "Primary Loss", "Total Transactions"]
+n_bins = 200
 
 # Iterate over all files in the target directory
 for filename in os.listdir(target_dir):
@@ -274,8 +274,10 @@ for filename in os.listdir(target_dir):
 # compute_bounds(CoF_dict)
 
 # Build histograms
-hist_CoF = build_hist(CoF, 500)
-# hist_PL = build_hist(PL, 1500)
+param_to_calculate = CoF #TODO: move at the top when code is acceptable
+bin_width = (max(param_to_calculate) - min(param_to_calculate)) / n_bins
+hist_result = build_hist(param_to_calculate, bin_width) #400, 90, 500
+# hist_PL = build_hist(PL, 2500) #1000, 1500
 # hist_TTXS = build_hist(TTXS, 1500)
 
 # # Print results for each file
@@ -306,8 +308,8 @@ else:
         axes.append(ax)
 
 
-fit_and_plot_hist(axes[0], hist_CoF, "Contact Frequency", 500)
-# fit_and_plot_hist(axes[0], hist_PL, "Primary Loss", 1500)
+fit_and_plot_hist(axes[0], hist_result, "Contact Frequency", bin_width) #400,90,500
+# fit_and_plot_hist(axes[0], hist_result, "Primary Loss", bin_width) #2500, 1500
 # fit_and_plot_hist(axes[2], hist_TTXS, "Total Transactions", 1500)
 
 if single_graph:
