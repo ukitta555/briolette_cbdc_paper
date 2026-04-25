@@ -42,6 +42,7 @@ CoF_dict = {}
 # target_dir = "results/sobol_experiments/FAIR_10k_urban_0.02-1_6_0_200"
 # target_dir = "results/sobol_experiments/FAIR_10k_urban_0.02-1_12_0_200"
 
+impact_file = open(os.path.join(os.path.split(target_dir)[0],"impact.csv"),"a")
 
 def extract_parameter_values(filename):
     """
@@ -139,11 +140,15 @@ def fit_curve(x_data, y_data, initial_guess, use_built_in_model, fit_gamma):
         param_names = ['Minimum', 'Mode', 'Maximum', 'Scale', 'LocY']
         popt, pcov, infodict, mseg, ier = curve_fit(modPertModel, x_data, y_data, p0=initial_guess, bounds=bounds, full_output=True, maxfev=48000)
 
+    # impact_file.write("offline_transactions;"+",".join(param_names)+"\n")
+    impact_file.write(target_dir.split("_")[-3])
     # Calculate confidence intervals
     perr = np.sqrt(np.diag(pcov))
     for param, err, name in zip(popt, perr, param_names):
         print(f"{name}: {param:.8f} ± {err:.8f}")
+        impact_file.write(f",{param:.8f}")
     #print(infodict,mseg,ier)
+    impact_file.write("\n")
     return popt
 
 def build_hist(data, bin_width):
