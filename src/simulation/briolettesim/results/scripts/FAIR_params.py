@@ -14,7 +14,7 @@ bounds_4_realistic_adversary = [[0.05, 0.7],
 bounds_4_semi_realistic_adversary = [[0.05, 0.7],
             [0.1, 0.5],
             [0.1, 0.5],
-            [0.002, 1]] # 2 for every 1k -> 1 for every 1 (Malicious:Honest)
+            [0.02, 1]] # 2 for every 100 -> 1 for every 1 (Malicious:Honest)
 # bounds_bottom_10_4 = [[0.05332457115873695, 0.6976294308900832],
 #             [0.10273502804338933, 0.49859678372740746],
 #             [0.1007303286343813, 0.4989615138620138],
