@@ -225,10 +225,11 @@ def fit_and_plot_hist(ax, hist, label, bin_width):
     ax.grid(True, alpha=0.3, linestyle='dashdot', linewidth=0.5)
 
 ### Program starts here ###
-CoF, PL, TTXS = [], [], []
+CoF, PL, AV_PL = [], [], []
 CoF_dict = {}
 single_graph = False
 average_values = False
+diagrams_to_draw = ["Contact Frequency"] #["Contact Frequency", "Primary Loss", "Average Primary Loss"]
 n_bins = 200
 
 # Iterate over all files in the target directory
@@ -246,7 +247,7 @@ for filename in os.listdir(target_dir):
     if average_values:
       tmp_cof= []
       tmp_pl= []
-      tmp_ttxs= []
+      tmp_av_pl= []
     
     for line in f:
       parts = line.strip().split()
@@ -257,18 +258,19 @@ for filename in os.listdir(target_dir):
       if average_values:
         tmp_cof.append(cof)
         tmp_pl.append(pl)
-        tmp_ttxs.append(ttxs)
+        tmp_av_pl.append(pl/cof)
       else:
         CoF.append(cof)
-        PL.append(pl)
-        TTXS.append(ttxs)
+        if pl != 1405220:
+            PL.append(pl)
+        AV_PL.append(pl/cof)
     
     #   CoF_dict[cof] = params
     
     if average_values:
       CoF.append(np.mean(tmp_cof))
       PL.append(np.mean(tmp_pl))
-      TTXS.append(np.mean(ttxs))
+      AV_PL.append(np.mean(tmp_av_pl))
 
 # Compute bounds
 # compute_bounds(CoF_dict)
@@ -293,7 +295,7 @@ hist_result = build_hist(param_to_calculate, bin_width) #400, 90, 500
 #     print(b)
 
 # Plot histograms using matplotlib
-x_labels = {"Contact Frequency":"Double spend transactions", "Primary Loss":"Total double spent value", "Total Transactions":"Total transactions"}
+x_labels = {"Contact Frequency":"Double spend transactions", "Primary Loss":"Total double spent value", "Average Primary Loss":"Double spent value per transaction"}
 if single_graph:
     fig, axes = plt.subplots(3, 1, figsize=(8, 10))
     fig.suptitle(f"Histograms for {':'.join(target_dir.split('/')[-2:])}")
@@ -310,7 +312,7 @@ else:
 
 fit_and_plot_hist(axes[0], hist_result, "Contact Frequency", bin_width) #400,90,500
 # fit_and_plot_hist(axes[0], hist_result, "Primary Loss", bin_width) #2500, 1500
-# fit_and_plot_hist(axes[2], hist_TTXS, "Total Transactions", 1500)
+# fit_and_plot_hist(axes[0], hist_result, "Average Primary Loss", bin_width) #1500 for total transactions
 
 if single_graph:
     plt.tight_layout()
