@@ -125,7 +125,8 @@ def fit_curve(x_data, y_data, initial_guess, use_built_in_model, fit_gamma):
     if use_built_in_model:
         # bounds=([0,0,0,1], [np.inf,np.inf,np.inf,10])
         # bounds=([initial_guess[0],0,0,1], [np.inf,np.inf,np.inf,10])
-        bounds=([-np.inf,-np.inf,-np.inf,1], [np.inf,np.inf,np.inf,10])
+        # bounds=([-np.inf,-np.inf,-np.inf,1], [np.inf,np.inf,np.inf,10]) #use with built-in
+        bounds=([0,0,0,-np.inf,-np.inf], [np.inf,np.inf,np.inf,np.inf,np.inf]) #use with custom
         if fit_gamma:
             # Fit with gamma
             param_names = ['Minimum', 'Mode', 'Maximum', 'Gamma']
@@ -136,12 +137,12 @@ def fit_curve(x_data, y_data, initial_guess, use_built_in_model, fit_gamma):
             popt, pcov, infodict, mseg, ier = curve_fit(PERT, x_data, y_data, p0=initial_guess[:-1], bounds= (bounds[0][:-1], bounds[1][:-1]), full_output=True)
     else:
         param_names = ['Minimum', 'Mode', 'Maximum', 'Scale', 'LocY']
-        popt, pcov, infodict, mseg, ier = curve_fit(modPertModel, x_data, y_data, p0=initial_guess, full_output=True, maxfev=48000)
+        popt, pcov, infodict, mseg, ier = curve_fit(modPertModel, x_data, y_data, p0=initial_guess, bounds=bounds, full_output=True, maxfev=48000)
 
     # Calculate confidence intervals
     perr = np.sqrt(np.diag(pcov))
     for param, err, name in zip(popt, perr, param_names):
-        print(f"{name}: {param:.2f} ± {err:.2f}")
+        print(f"{name}: {param:.8f} ± {err:.8f}")
     #print(infodict,mseg,ier)
     return popt
 
@@ -189,7 +190,7 @@ def fit_and_plot_hist(ax, hist, label, bin_width):
     if use_built_in_model:
         init_guess = [np.min(x_data), x_data[mode_idx], np.max(x_data), 4]
     else:
-        init_guess = [np.min(x_data), x_data[mode_idx], np.max(x_data), 2000, 0]
+        init_guess = [0, x_data[mode_idx], np.max(x_data), 2000, 0]
 
     print(f"\n{label} - Initial guess: {init_guess}")
 
