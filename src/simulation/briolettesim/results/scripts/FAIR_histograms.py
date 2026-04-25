@@ -22,6 +22,26 @@ target_dir = "results/sobol_experiments/FAIR_10k_urban"
 
 CoF, PL, TTXS = [], [], []
 CoF_dict = {}
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_realistic"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_1-5k_1-50"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_1-1k_1-10"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_4-params_2-10k_2-100"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_6-params_2-10k_2-100"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_4-params_1-1k_1-10"
+# target_dir = "results/sobol_experiments/original_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.75_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_percent-values"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-3_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-1_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-1_double_epoch_test" (PL: use 1200 bin size)
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-1_16_epoch_tickets_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-1_20_epoch_tickets_0_lowerlimit_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-1_20_epoch_tickets_0_lowerlimit_larger_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.02-1_20_epoch_tickets_0_lowerlimit_larger_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.02-1_20_0_200"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.02-1_6_0_200"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.02-1_12_0_200"
+
 
 def extract_parameter_values(filename):
     """
@@ -49,7 +69,7 @@ def compute_bounds(data):
     subset_dict_bottom = {k: data[k] for k in bottom_keys}
     subset_dict_top = {k: data[k] for k in top_keys}
 
-    for subset_dict in [subset_dict_bottom, subset_dict_top]:
+    for i,subset_dict in enumerate([subset_dict_bottom, subset_dict_top]):
         # compute bounds for p2p,p2m,ratio_ds,p_move within this subset
         subset_values = np.array(list(subset_dict.values()))  # shape (N, 4)
         p_move_vals = subset_values[:, 0]
@@ -62,7 +82,7 @@ def compute_bounds(data):
         p2m_bounds = (float(np.min(p2m_vals)), float(np.max(p2m_vals)))
         ratio_ds_bounds = (float(np.min(ratio_ds_vals)), float(np.max(ratio_ds_vals)))
 
-        print("\nBounds for bottom+top 10% (p_move,p2p,p2m,ratio_ds):")
+        print(f"\nBounds for {["bottom","top"][i]} 10% (p_move,p2p,p2m,ratio_ds):")
         print("p_move:", p_move_bounds)
         print("p2p:", p2p_bounds)
         print("p2m:", p2m_bounds)
