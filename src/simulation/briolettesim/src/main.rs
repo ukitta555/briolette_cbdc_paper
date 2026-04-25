@@ -1161,9 +1161,9 @@ fn main() -> io::Result<()> {
                                     p2m_probability: *p2m_probability, 
                                     p2p_probability: *p2p_probability, 
                                     move_probability: *move_probability,   
-                                    merchant_sync_frequency: 8,
-                                    tickets_given_right_away: 8, 
-                                    tickets_lower_bound_to_sync: 2,
+                                    merchant_sync_frequency: 12, // original value 8
+                                    tickets_given_right_away: 12, //original value 8 
+                                    tickets_lower_bound_to_sync: 0, //original value 2
                                     account_balance: 200,
                                     // model: Model::Rural,
                                     // graph_config: GraphConfig::Watts(WattsConfig {
@@ -1214,7 +1214,7 @@ fn get_available_memory_mb() -> u64 {
         Ok(content) => content,
         Err(_) => {
             eprintln!("WARNING: Cannot read /proc/meminfo, using fallback estimate");
-            return 8000; // Conservative fallback
+            return 24000; // Conservative fallback
         }
     };
     
