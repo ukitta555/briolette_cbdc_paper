@@ -20,8 +20,27 @@ from scipy.stats import beta as beta_dist
 target_dir = "results/sobol_experiments/FAIR_10k_urban"
 # target_dir = "results/sobol_experiments/FAIR_10k_rural"
 
-CoF, PL, TTXS = [], [], []
-CoF_dict = {}
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_realistic"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_1-5k_1-50"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_1-1k_1-10"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_4-params_2-10k_2-100"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_6-params_2-10k_2-100"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_4-params_1-1k_1-10"
+# target_dir = "results/sobol_experiments/original_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.75_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_percent-values"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-3_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-1_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-1_double_epoch_test" (PL: use 1200 bin size)
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-1_16_epoch_tickets_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-1_20_epoch_tickets_0_lowerlimit_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.002-1_20_epoch_tickets_0_lowerlimit_larger_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.02-1_20_epoch_tickets_0_lowerlimit_larger_test"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.02-1_20_0_200"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.02-1_6_0_200"
+# target_dir = "results/sobol_experiments/FAIR_10k_urban_0.02-1_12_0_200"
+
+impact_file = open(os.path.join(os.path.split(target_dir)[0],"impact.csv"),"a")
 
 def extract_parameter_values(filename):
     """
@@ -49,7 +68,7 @@ def compute_bounds(data):
     subset_dict_bottom = {k: data[k] for k in bottom_keys}
     subset_dict_top = {k: data[k] for k in top_keys}
 
-    for subset_dict in [subset_dict_bottom, subset_dict_top]:
+    for i,subset_dict in enumerate([subset_dict_bottom, subset_dict_top]):
         # compute bounds for p2p,p2m,ratio_ds,p_move within this subset
         subset_values = np.array(list(subset_dict.values()))  # shape (N, 4)
         p_move_vals = subset_values[:, 0]
@@ -62,7 +81,7 @@ def compute_bounds(data):
         p2m_bounds = (float(np.min(p2m_vals)), float(np.max(p2m_vals)))
         ratio_ds_bounds = (float(np.min(ratio_ds_vals)), float(np.max(ratio_ds_vals)))
 
-        print("\nBounds for bottom+top 10% (p_move,p2p,p2m,ratio_ds):")
+        print(f"\nBounds for {["bottom","top"][i]} 10% (p_move,p2p,p2m,ratio_ds):")
         print("p_move:", p_move_bounds)
         print("p2p:", p2p_bounds)
         print("p2m:", p2m_bounds)
@@ -105,7 +124,8 @@ def fit_curve(x_data, y_data, initial_guess, use_built_in_model, fit_gamma):
     if use_built_in_model:
         # bounds=([0,0,0,1], [np.inf,np.inf,np.inf,10])
         # bounds=([initial_guess[0],0,0,1], [np.inf,np.inf,np.inf,10])
-        bounds=([-np.inf,-np.inf,-np.inf,1], [np.inf,np.inf,np.inf,10])
+        # bounds=([-np.inf,-np.inf,-np.inf,1], [np.inf,np.inf,np.inf,10]) #use with built-in
+        bounds=([0,0,0,-np.inf,-np.inf], [np.inf,np.inf,np.inf,np.inf,np.inf]) #use with custom
         if fit_gamma:
             # Fit with gamma
             param_names = ['Minimum', 'Mode', 'Maximum', 'Gamma']
@@ -116,13 +136,17 @@ def fit_curve(x_data, y_data, initial_guess, use_built_in_model, fit_gamma):
             popt, pcov, infodict, mseg, ier = curve_fit(PERT, x_data, y_data, p0=initial_guess[:-1], bounds= (bounds[0][:-1], bounds[1][:-1]), full_output=True)
     else:
         param_names = ['Minimum', 'Mode', 'Maximum', 'Scale', 'LocY']
-        popt, pcov, infodict, mseg, ier = curve_fit(modPertModel, x_data, y_data, p0=initial_guess, full_output=True)
+        popt, pcov, infodict, mseg, ier = curve_fit(modPertModel, x_data, y_data, p0=initial_guess, bounds=bounds, full_output=True, maxfev=48000)
 
+    # impact_file.write("offline_transactions;"+",".join(param_names)+"\n")
+    impact_file.write(target_dir.split("_")[-3])
     # Calculate confidence intervals
     perr = np.sqrt(np.diag(pcov))
     for param, err, name in zip(popt, perr, param_names):
-        print(f"{name}: {param:.2f} ± {err:.2f}")
+        print(f"{name}: {param:.8f} ± {err:.8f}")
+        impact_file.write(f",{param:.8f}")
     #print(infodict,mseg,ier)
+    impact_file.write("\n")
     return popt
 
 def build_hist(data, bin_width):
@@ -169,7 +193,7 @@ def fit_and_plot_hist(ax, hist, label, bin_width):
     if use_built_in_model:
         init_guess = [np.min(x_data), x_data[mode_idx], np.max(x_data), 4]
     else:
-        init_guess = [np.min(x_data), x_data[mode_idx], np.max(x_data), 2000, 0]
+        init_guess = [0, x_data[mode_idx], np.max(x_data), 2000, 0]
 
     print(f"\n{label} - Initial guess: {init_guess}")
 
@@ -192,7 +216,7 @@ def fit_and_plot_hist(ax, hist, label, bin_width):
         #ax.axvline(x=popt[2], color='black', linestyle='--')
 
     ax.set_title(label)
-    ax.set_xticks([10000,20000,30000,40000,50000,60000,70000,80000,90000,100000]) # CoF
+    # ax.set_xticks([10000,20000,30000,40000,50000,60000,70000,80000,90000,100000]) # CoF
     # ax.set_xticks([25000,50000,75000,100000,125000,150000,175000,200000,225000,250000,275000,300000]) # PL
     ax.set_xlabel(x_labels[label])
     ax.set_ylabel("Probability")
@@ -201,9 +225,12 @@ def fit_and_plot_hist(ax, hist, label, bin_width):
     ax.grid(True, alpha=0.3, linestyle='dashdot', linewidth=0.5)
 
 ### Program starts here ###
+CoF, PL, AV_PL = [], [], []
+CoF_dict = {}
 single_graph = False
 average_values = False
-diagrams_to_draw = ["Contact Frequency"] #["Contact Frequency", "Primary Loss", "Total Transactions"]
+diagrams_to_draw = ["Contact Frequency"] #["Contact Frequency", "Primary Loss", "Average Primary Loss"]
+n_bins = 200
 
 # Iterate over all files in the target directory
 for filename in os.listdir(target_dir):
@@ -211,16 +238,16 @@ for filename in os.listdir(target_dir):
   if not os.path.isfile(filepath):
     continue  # skip subdirectories or non-files
 
-  params = extract_parameter_values(filename)
-  if params is None:
-      continue
+#   params = extract_parameter_values(filename)
+#   if params is None:
+#       continue
 
   # Parse the file line by line
   with open(filepath, "r") as f:
     if average_values:
       tmp_cof= []
       tmp_pl= []
-      tmp_ttxs= []
+      tmp_av_pl= []
     
     for line in f:
       parts = line.strip().split()
@@ -231,25 +258,28 @@ for filename in os.listdir(target_dir):
       if average_values:
         tmp_cof.append(cof)
         tmp_pl.append(pl)
-        tmp_ttxs.append(ttxs)
+        tmp_av_pl.append(pl/cof)
       else:
         CoF.append(cof)
-        PL.append(pl)
-        TTXS.append(ttxs)
+        if pl != 1405220:
+            PL.append(pl)
+        AV_PL.append(pl/cof)
     
-      CoF_dict[cof] = params
+    #   CoF_dict[cof] = params
     
     if average_values:
       CoF.append(np.mean(tmp_cof))
       PL.append(np.mean(tmp_pl))
-      TTXS.append(np.mean(ttxs))
+      AV_PL.append(np.mean(tmp_av_pl))
 
 # Compute bounds
 # compute_bounds(CoF_dict)
 
 # Build histograms
-hist_CoF = build_hist(CoF, 500)
-# hist_PL = build_hist(PL, 1500)
+param_to_calculate = CoF #TODO: move at the top when code is acceptable
+bin_width = (max(param_to_calculate) - min(param_to_calculate)) / n_bins
+hist_result = build_hist(param_to_calculate, bin_width) #400, 90, 500
+# hist_PL = build_hist(PL, 2500) #1000, 1500
 # hist_TTXS = build_hist(TTXS, 1500)
 
 # # Print results for each file
@@ -265,7 +295,7 @@ hist_CoF = build_hist(CoF, 500)
 #     print(b)
 
 # Plot histograms using matplotlib
-x_labels = {"Contact Frequency":"Double spend transactions", "Primary Loss":"Total double spent value", "Total Transactions":"Total transactions"}
+x_labels = {"Contact Frequency":"Double spend transactions", "Primary Loss":"Total double spent value", "Average Primary Loss":"Double spent value per transaction"}
 if single_graph:
     fig, axes = plt.subplots(3, 1, figsize=(8, 10))
     fig.suptitle(f"Histograms for {':'.join(target_dir.split('/')[-2:])}")
@@ -280,9 +310,9 @@ else:
         axes.append(ax)
 
 
-fit_and_plot_hist(axes[0], hist_CoF, "Contact Frequency", 500)
-# fit_and_plot_hist(axes[0], hist_PL, "Primary Loss", 1500)
-# fit_and_plot_hist(axes[2], hist_TTXS, "Total Transactions", 1500)
+fit_and_plot_hist(axes[0], hist_result, "Contact Frequency", bin_width) #400,90,500
+# fit_and_plot_hist(axes[0], hist_result, "Primary Loss", bin_width) #2500, 1500
+# fit_and_plot_hist(axes[0], hist_result, "Average Primary Loss", bin_width) #1500 for total transactions
 
 if single_graph:
     plt.tight_layout()
@@ -292,5 +322,5 @@ if single_graph:
 else:
     for fig, name in zip(figs, diagrams_to_draw):
         fig.tight_layout()
-        fig.savefig(f"results/plots/FAIR_hist_{name}.pdf")
+        fig.savefig(f"results/plots/{target_dir.split("/")[-1]}_hist_{name}.pdf")
         plt.close(fig)
