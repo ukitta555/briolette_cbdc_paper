@@ -1162,25 +1162,25 @@ fn main() -> io::Result<()> {
                                     top_up_amount: 10,
                                     merchants: 30, 
                                     banks: 5,
-                                    graph_file: format!("graphs/barabasi_albert_8_m.txt"),
-                                    // graph_file: format!("graphs/watts-strogatz-5-connections.txt"),
+                                    // graph_file: format!("graphs/barabasi_albert_8_m.txt"),
+                                    graph_file: format!("graphs/watts-strogatz-5-connections.txt"),
                                     p2m_probability: *p2m_probability, 
                                     p2p_probability: *p2p_probability, 
                                     move_probability: *move_probability,   
                                     merchant_sync_frequency: 12, // original value 8
                                     tickets_given_right_away: 12, //original value 8 
-                                    tickets_lower_bound_to_sync: 0, //original value 2
+                                    tickets_lower_bound_to_sync: 1, //original value 2
                                     account_balance: 200,
-                                    // model: Model::Rural,
-                                    // graph_config: GraphConfig::Watts(WattsConfig {
-                                    //     size: 64, 
-                                    //     param: 5,
-                                    // }),
-                                    model: Model::Urban,
-                                    graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                                    model: Model::Rural,
+                                    graph_config: GraphConfig::Watts(WattsConfig {
                                         size: 64, 
-                                        param: 8,
+                                        param: 5,
                                     }),
+                                    // model: Model::Urban,
+                                    // graph_config: GraphConfig::Barabasi(BarabasiConfig {
+                                    //     size: 64, 
+                                    //     param: 8,
+                                    // }),
                                     category: ExperimentCategory::Sobol,
                                 },
                             );
