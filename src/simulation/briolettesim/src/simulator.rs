@@ -82,6 +82,11 @@ impl Simulator {
             rejected = true;
         } else {
             stats.txns_total += 1;
+            stats.txns_amount_total += amount;
+            if source.data.role.is_double_spender() && (!target.data.role.is_bank() && !target.data.role.is_double_spender()) {
+            stats.double_spend_txns_conditional += 1;
+            stats.double_spent_amount_total += amount;
+        }
         }
         
         // Transaction type statistics

@@ -146,6 +146,9 @@ pub struct EpochSampleStats {
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct Statistics {
     double_spend_txns: usize,
+    double_spend_txns_conditional: usize,
+    double_spent_amount_total: usize,
+    txns_amount_total: usize,
     potential_double_spender_max: usize,
     double_spenders_total: usize,
     double_spenders_revoked_total: usize,
@@ -201,6 +204,9 @@ impl Statistics {
     
     pub fn update(&mut self, stats: &Statistics) {
         self.double_spend_txns += stats.double_spend_txns;
+        self.double_spend_txns_conditional += stats.double_spend_txns_conditional;
+        self.double_spent_amount_total += stats.double_spent_amount_total;
+        self.txns_amount_total += stats.txns_amount_total;
         self.potential_double_spender_max += stats.potential_double_spender_max;
         self.double_spenders_total += stats.double_spenders_total;
         self.double_spenders_revoked_total += stats.double_spenders_revoked_total;
@@ -1922,7 +1928,7 @@ fn check_exit_conditions_and_print_results_to_file_FAIR(
             });
 
         // Double spend transactions and total double spend amount
-        match write!(file, "{} {} {}", world.statistics.double_spend_txns, world.statistics.coins_double_spent_total, world.statistics.txns_total) {
+        match write!(file, "{} {} {} {} {} {} {}", world.statistics.double_spend_txns, world.statistics.double_spend_txns_conditional, world.statistics.coins_double_spent_total, world.statistics.double_spent_amount_total, world.statistics.txns_total, world.statistics.txns_rejected_total, world.statistics.txns_amount_total) {
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
         }
