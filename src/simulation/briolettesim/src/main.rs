@@ -1167,8 +1167,8 @@ fn main() -> io::Result<()> {
                                     p2m_probability: *p2m_probability, 
                                     p2p_probability: *p2p_probability, 
                                     move_probability: *move_probability,   
-                                    merchant_sync_frequency: 10, // original value 8
-                                    tickets_given_right_away: 10, //original value 8 
+                                    merchant_sync_frequency: 8, // original value 8
+                                    tickets_given_right_away: 8, //original value 8 
                                     tickets_lower_bound_to_sync: 1, //original value 2
                                     account_balance: 200,
                                     model: Model::Rural,
