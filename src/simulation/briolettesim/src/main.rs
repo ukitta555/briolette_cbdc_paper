@@ -1159,7 +1159,7 @@ fn main() -> io::Result<()> {
                                 ExperimentConfig {
                                     ratio_double_spenders_to_population: *ratio_double_spenders_to_population,
                                     random_sync_probability: 0.01,
-                                    top_up_amount: 10,
+                                    top_up_amount: 10, // start with 50
                                     merchants: 30, 
                                     banks: 5,
                                     // graph_file: format!("graphs/barabasi_albert_8_m.txt"),
@@ -1167,8 +1167,8 @@ fn main() -> io::Result<()> {
                                     p2m_probability: *p2m_probability, 
                                     p2p_probability: *p2p_probability, 
                                     move_probability: *move_probability,   
-                                    merchant_sync_frequency: 24, // original value 8
-                                    tickets_given_right_away: 24, //original value 8
+                                    merchant_sync_frequency: 28, // original value 8
+                                    tickets_given_right_away: 28, //original value 8
                                     tickets_lower_bound_to_sync: 1, //original value 2
                                     account_balance: 200,
                                     model: Model::Rural,
