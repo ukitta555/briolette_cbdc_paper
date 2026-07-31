@@ -1136,7 +1136,7 @@ fn main() -> io::Result<()> {
             let reader: io::BufReader<File> = io::BufReader::new(file);    
             
             for (exp_param_idx, experiment_params) in reader.lines().enumerate() {
-                let experiment_params: Vec<f64> = 
+                let experiment_params: Vec<f64> = 1
                     experiment_params?
                         .split_whitespace()
                         .into_iter()
@@ -1167,8 +1167,8 @@ fn main() -> io::Result<()> {
                                     p2m_probability: *p2m_probability, 
                                     p2p_probability: *p2p_probability, 
                                     move_probability: *move_probability,   
-                                    merchant_sync_frequency: 24, // original value 8
-                                    tickets_given_right_away: 24, //original value 8
+                                    merchant_sync_frequency: 28, // original value 8
+                                    tickets_given_right_away: 28, //original value 8
                                     tickets_lower_bound_to_sync: 1, //original value 2
                                     account_balance: 200,
                                     // model: Model::Rural,
