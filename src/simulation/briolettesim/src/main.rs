@@ -1136,7 +1136,7 @@ fn main() -> io::Result<()> {
             let reader: io::BufReader<File> = io::BufReader::new(file);    
             
             for (exp_param_idx, experiment_params) in reader.lines().enumerate() {
-                let experiment_params: Vec<f64> = 1
+                let experiment_params: Vec<f64> =
                     experiment_params?
                         .split_whitespace()
                         .into_iter()
