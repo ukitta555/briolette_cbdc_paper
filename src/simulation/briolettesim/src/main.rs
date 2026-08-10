@@ -1936,5 +1936,108 @@ fn check_exit_conditions_and_print_results_to_file_FAIR(
             Ok(_) => (),
             Err(e) => panic!("{}", e) 
         }
+
+        // extra tracking
+        match write!(file, "{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}", 
+            world.statistics.txns_p2p_total,
+            world.statistics.txns_p2m_total,
+            world.statistics.txns_m2m_total,
+            world.statistics.txns_b2m_total,
+            world.statistics.txns_m2b_total,
+            world.statistics.txns_b2p_total,
+            world.statistics.txns_p2b_total,
+            world.statistics.txns_b2b_total,
+            world.statistics.txns_p2p_rejected_total,
+            world.statistics.txns_p2m_rejected_total,
+            world.statistics.txns_m2m_rejected_total,
+            world.statistics.txns_b2m_rejected_total,
+            world.statistics.txns_m2b_rejected_total,
+            world.statistics.txns_b2p_rejected_total,
+            world.statistics.txns_p2b_rejected_total,
+            world.statistics.txns_b2b_rejected_total,
+            world.statistics.coins_double_spent_recovered) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        }
+        match writeln!(file) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        }
+
+        //original trakcing
+        // How many simulation steps have passed since initial double-spending fork?
+        for (epoch, life) in &world.statistics.double_spent_life_measurements {
+            match write!(file, "{} {} ", epoch, life) {
+                Ok(_) => (),
+                Err(e) => panic!("{}", e) 
+            }
+        }
+        match writeln!(file) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        }
+
+        // How many transactions have passed since initial double-spending fork?
+        for (epoch, txs) in &world.statistics.double_spent_txs_measurements {
+            match write!(file, "{} {} ", epoch, txs) {
+                Ok(_) => (),
+                Err(e) => panic!("{}", e) 
+            }
+        }
+        match writeln!(file) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        }
+
+        // Step when all cheaters have been caught
+        match writeln!(file, "{}", step) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        }
+
+        // Ratio (double_spent_coins / coins_total)
+        for item in &world.statistics.ratios_of_double_spent_coins {
+            match write!(file, "{} ", item) {
+                Ok(_) => (),
+                Err(e) => panic!("{}", e) 
+            }
+        }
+        match writeln!(file) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        }
+
+        // Ratio (double_spenters / double_spenders_total) (???)
+        for item in &world.statistics.ratio_of_double_spenders_caught {
+            match write!(file, "{} ", item) {
+                Ok(_) => (),
+                Err(e) => panic!("{}", e) 
+            }
+        }
+        match writeln!(file) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        }
+
+        // mean/std/max for (global - local) epoch diffs
+        for item in &world.statistics.global_to_local_epoch_diffs {
+            match write!(file, "{} {} {}:", item.mean, item.standard_deviation, item.max_diff) {
+                Ok(_) => (),
+                Err(e) => panic!("{}", e) 
+            }
+        }
+        match writeln!(file) {
+            Ok(_) => (),
+            Err(e) => panic!("{}", e) 
+        }
+
+        // std for intra-sample epoch diffs
+        for item in &world.statistics.std_local_epoch_diffs {
+            match write!(file, "{} ", item) {
+                Ok(_) => (),
+                Err(e) => panic!("{}", e) 
+            }
+        }
+
     }
 }
